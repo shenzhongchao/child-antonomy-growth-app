@@ -33,6 +33,7 @@ packages/
 # Test results
 [Tt]est[Rr]esult*/
 TestResults/
+scripts/shots/
 
 # OS files
 Thumbs.db
