@@ -19,3 +19,113 @@ main.page-in{animation:page-in .3s ease-out}
 .burst{position:fixed;inset:0;z-index:110;pointer-events:none;overflow:hidden}
 .burst i{position:absolute;left:50%;top:42%;width:12px;height:12px;border-radius:3px;background:var(--confetti-color);animation:burst-fly var(--dur,1.2s) cubic-bezier(.16,.7,.3,1) forwards}
 @media(prefers-reduced-motion:reduce){.burst,.fly-star{display:none}}
+
+/* ===== 夜间模式：小星星的夜空 ===== */
+.header-actions{display:flex;gap:10px;align-items:center}
+.theme-btn{background:#ffffffce;border:2px solid #c3e2ef;border-radius:25px;padding:10px 14px;font-size:17px;line-height:1;box-shadow:0 3px 0 #beddea}
+@keyframes twinkle{0%,100%{opacity:.3}55%{opacity:1}}
+@keyframes moon-float{0%,100%{transform:translateY(0)}50%{transform:translateY(14px)}}
+@keyframes meteor{0%,86%{opacity:0;transform:translate(0,0)}89%{opacity:1}96%{opacity:1}100%{opacity:0;transform:translate(-46vw,26vh)}}
+.sky{display:none}
+body.night .sky{display:block;position:fixed;inset:0;z-index:-1;pointer-events:none;overflow:hidden}
+.sky i{position:absolute;display:block}
+.sky .moon{top:5%;right:6%;width:86px;height:86px;border-radius:50%;background:radial-gradient(circle at 36% 34%,#fffdf0,#ffedae 58%,#f6d173);box-shadow:0 0 50px 18px #ffe9a84d,0 0 120px 60px #ffe9a81f;animation:moon-float 9s ease-in-out infinite}
+.sky .moon::before,.sky .moon::after{content:'';position:absolute;border-radius:50%;background:#f2d48866}
+.sky .moon::before{width:20px;height:20px;top:22px;left:24px}
+.sky .moon::after{width:13px;height:13px;top:48px;left:52px}
+.sky .stars{inset:0;background-repeat:repeat}
+.sky .stars-a{background-image:radial-gradient(#ffffff 1.2px,transparent 1.7px),radial-gradient(#ffe9a8 1px,transparent 1.5px);background-size:118px 118px,186px 186px;background-position:0 0,63px 84px;animation:twinkle 3.4s ease-in-out infinite}
+.sky .stars-b{background-image:radial-gradient(#cfe0ff 1.6px,transparent 2.1px),radial-gradient(#ffffff 1px,transparent 1.4px);background-size:264px 264px,340px 340px;background-position:131px 42px,200px 160px;animation:twinkle 4.9s ease-in-out infinite 1.3s}
+.sky .meteor{top:11%;left:80%;width:3px;height:3px;border-radius:50%;background:#fff;box-shadow:0 0 8px 2px #ffffffb3;opacity:0;animation:meteor 17s linear infinite}
+.sky .meteor::before{content:'';position:absolute;right:1px;top:50%;width:130px;height:2px;transform:translateY(-50%);background:linear-gradient(90deg,transparent,#ffffffd9);border-radius:2px}
+body.night{--ink:#e9e6ff;--muted:#a3aede;--line:#3d4a85;color:var(--ink);background-color:#171e44;background-image:radial-gradient(#ffffff22 1.2px,transparent 1.6px),linear-gradient(168deg,#141b3f,#232a5e 55%,#31235f);background-size:30px 30px,100% 100%}
+body.theme-anim,body.theme-anim *,body.theme-anim *:before,body.theme-anim *:after{transition:background-color .5s ease,border-color .5s ease,color .5s ease,box-shadow .5s ease,filter .5s ease!important}
+body.night .theme-btn{background:#2c3570;border-color:#4a5aa5;box-shadow:0 0 16px #ffd75d40,0 3px 0 #1a2049}
+body.night .parent{background:#2c3570d9;border-color:#4a5aa5;box-shadow:0 3px 0 #1a2049;color:#dfe4ff}
+body.night .brand{color:#f0edff}
+body.night .app{background:#232b5b;border-color:#4553a0;box-shadow:0 12px 0 #171d4280,0 0 46px #5a6fd022}
+body.night nav{background:#1c2350;border-right-color:#3d4a85}
+body.night nav button{color:#c9d2f5}
+body.night nav button.active{background:#3a3070;border-color:#8a72d0;box-shadow:0 0 16px #8a72d055,0 4px 0 #241a4a;color:#e6d9ff}
+body.night nav button:nth-child(2).active{background:#1f3a63;border-color:#4a80c0;box-shadow:0 0 16px #4a80c055,0 4px 0 #12233f;color:#cfe6ff}
+body.night nav button:nth-child(3).active{background:#1f4526;border-color:#5f9a55;box-shadow:0 0 16px #5f9a5555,0 4px 0 #122a15;color:#d6f0cc}
+body.night nav button:nth-child(4).active{background:#4a2340;border-color:#b06090;box-shadow:0 0 16px #b0609055,0 4px 0 #2c1226;color:#ffd6e8}
+body.night .navfriend p{background:#2a3570;border-color:#4a5aa0;color:#c9d2f5}
+body.night .balance{box-shadow:0 0 20px #ffd75d59,0 3px 0 #efd994}
+body.night .brand-mascot,body.night .navfriend img,body.night .page-heading .mascot,body.night .wallet-star,body.night .celebration img,body.night .completion-art{filter:drop-shadow(0 0 12px #ffd75d73)}
+body.night .story-hero{background:#1a2148;border-color:#4553a0;box-shadow:0 5px 0 #171d42}
+body.night .scene{filter:brightness(.6) saturate(.85) hue-rotate(-15deg)}
+body.night .story-copy{background:linear-gradient(90deg,#232b5bf2,#232b5bc9 70%,#232b5b00)}
+body.night .story-copy h1{color:#cfe0ff;text-shadow:0 0 16px #4a6cd080}
+body.night .story-copy p{color:#a9b8e8}
+body.night .story-tag{background:#2c3570e3;border-color:#4a5aa5;color:#ffd88a}
+body.night .count{background:#2a3570;color:#a3aede}
+body.night .link{color:#8fc3f0}
+body.night .primary{background:#2f7fc0;border-color:#4a80c0;box-shadow:0 5px 0 #1a4a80;text-shadow:0 1px #1a4a80}
+body.night .primary.gold{background:#ffd35b;color:#5f431b;border-color:#e1b63d;box-shadow:0 0 18px #ffd75d40,0 5px 0 #cb9f2a}
+body.night .primary:disabled{background:#2a3160;border-color:#3d4a85;box-shadow:0 3px 0 #3d4a85;color:#6a76a8}
+body.night .secondary{background:#2a3570;border-color:#4a5aa5;color:#dfe4ff}
+body.night .task{background:#1f3350;border-color:#3d6ba8;box-shadow:0 5px 0 #16233a}
+body.night .task:nth-child(2){background:#453a1c;border-color:#a8813a;box-shadow:0 5px 0 #2c2410}
+body.night .task:nth-child(3){background:#4a2432;border-color:#a85a75;box-shadow:0 5px 0 #301720}
+body.night .task-kicker{color:#8fa3d8}
+body.night .sticker{background:#e8ecff;border-color:#e8ecff;box-shadow:0 4px 0 #00000033}
+body.night .donebutton{background:#2a3570;border-color:#4a6ac0;color:#bfe0ff;box-shadow:0 4px 0 #1a2450}
+body.night .done{border-color:#5f8f4a!important;background:#27431f!important;box-shadow:0 5px 0 #182a13!important}
+body.night .done .donebutton{background:#5f9a55;box-shadow:0 3px 0 #3d6b35;border-color:#4f8a45}
+body.night .empty-challenges{border-color:#a8813a;background:#3a3018}
+body.night .plan-link{background:#1f3350;border-color:#3d6ba8;box-shadow:0 4px 0 #16233a}
+body.night .mood-panel{background:#262e5c;border-color:#4553a0}
+body.night .moods button{background:#2a3368}
+body.night .moods button:nth-child(2){background:#27361f}
+body.night .moods button:nth-child(3){background:#3d3418}
+body.night .moods button:nth-child(4){background:#402028}
+body.night .moods button:nth-child(5){background:#312a52}
+body.night .moods button span{color:#c9d2f5}
+body.night .moods .chosen{border-color:#e2b642!important;box-shadow:0 0 16px #ffd75d55,0 3px 0 #dab34e;background:#4a3d15!important}
+body.night .intro{background:#1f3350;border-color:#3d6ba8}
+body.night .tip{background:#3a3018;border-color:#8a6c30}
+body.night .planrow{background:#1f3350;border-color:#3d6ba8;box-shadow:0 4px 0 #16233a}
+body.night .planrow:nth-child(2n){background:#3a3018;border-color:#8a6c30;box-shadow:0 4px 0 #241c0c}
+body.night .planrow:nth-child(3n){background:#1f3a26;border-color:#4a7a45;box-shadow:0 4px 0 #12240f}
+body.night .number{background:#2a3570;border-color:#4a5aa5;color:#dfe4ff}
+body.night .move{background:#2a3570;border-color:#4a5aa5;box-shadow:0 3px 0 #1a2049;color:#dfe4ff}
+body.night .pill{background:#2a3570;color:#a3b8e8}
+body.night .planbook .pill{background:#232b5b;border-color:#4a5aa5}
+body.night .tile{background:#262e5c;border-color:#4553a0;box-shadow:0 4px 0 #171d42}
+body.night .skill-grid .tile{background:#1f3350;border-color:#3d6ba8;box-shadow:0 5px 0 #16233a}
+body.night .skill-grid .tile:nth-child(3n+2){background:#453a1c;border-color:#a8813a;box-shadow:0 5px 0 #2c2410}
+body.night .skill-grid .tile:nth-child(3n){background:#4a2432;border-color:#a85a75;box-shadow:0 5px 0 #301720}
+body.night .skill-badge{background:#1a2148;border-color:#4a6ac0;box-shadow:0 4px 0 #171d42}
+body.night .skill-grid .tile:nth-child(3n+2) .skill-badge{border-color:#c09a4a;box-shadow:0 4px 0 #2c2410}
+body.night .skill-grid .tile:nth-child(3n) .skill-badge{border-color:#b06090;box-shadow:0 4px 0 #301720}
+body.night .badge-level{background:#4a3d15;border-color:#c09a4a;color:#ffd88a}
+body.night .progress{background:#1a2148;border-color:#3d4a85}
+body.night .skill-stars{color:#ffd75d;text-shadow:0 0 10px #ffd75d99}
+body.night .skill-stars .unearned{color:#4a5488;text-shadow:none}
+body.night .reward-banner{background:#4a2432;border-color:#a85a75}
+body.night .reward-banner .rewardicon{background:#e8ecff}
+body.night .reward-grid .tile{border-color:#7a5fc0;box-shadow:0 5px 0 #241a3e;background:#262e5c}
+body.night .reward-top{background:#372a5c;border-color:#7a5fc0}
+body.night .reward-grid .tile:nth-child(3n+2){border-color:#a8813a;box-shadow:0 5px 0 #2c2410}
+body.night .reward-grid .tile:nth-child(3n+2) .reward-top{background:#453a1c;border-color:#a8813a}
+body.night .reward-grid .tile:nth-child(3n){border-color:#4a8a72;box-shadow:0 5px 0 #142a20}
+body.night .reward-grid .tile:nth-child(3n) .reward-top{background:#1f453a;border-color:#4a8a72}
+body.night .reward-category{color:#b0a0d8}
+body.night .receipt{background:#3a3018;border-color:#8a6c30}
+body.night .empty-coupons{background:#33281a;border-color:#8a6c50}
+body.night .note{background:#3a3018;border-color:#a8813a}
+body.night .note h3{color:#ffd88a}
+body.night .metric{color:#7fd0ff}
+body.night dialog{background:#262e5c;border-color:#4a5aa5;color:#e9e6ff;box-shadow:0 12px 0 #00000033,0 30px 90px #00000066}
+body.night dialog::backdrop{background:#0a0e2880}
+body.night .close{background:#2a3570;border-color:#4a5aa5;color:#dfe4ff}
+body.night .choice{background:#2a3368;border-color:#4553a0;box-shadow:0 3px 0 #171d42}
+body.night .choice.selected{border-color:#e2b642;background:#4a3d15;box-shadow:0 3px 0 #6b5518}
+body.night .self-choice{background:#453a1c;border-color:#a8813a}
+body.night .help-choice{background:#1f3a26;border-color:#4a7a45}
+body.night input,body.night select{background:#1a2148;color:#e9e6ff;border-color:#4553a0}
+body.night a{color:#8fc3f0}
+body.night .celebration{box-shadow:0 0 26px #ffd75d55}
+@media(max-width:720px){body.night nav{background:#1c2350f7;border-top-color:#3d4a85}.theme-btn{padding:9px 10px;font-size:15px}}
+@media(prefers-reduced-motion:reduce){.sky .meteor,.sky .stars-a,.sky .stars-b,.sky .moon{animation:none}}
