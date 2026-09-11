@@ -6,3 +6,16 @@
 /* Keep task instructions readable on small screens. */
 @media(max-width:720px){.task .sub,.reward-body .sub,.page-heading .sub,.intro .sub,.tip,.story-copy p{font-size:14px}.task-kicker{font-size:12px}.donebutton small,.moods button span{font-size:12px}.reward-body .primary{font-size:14px}.brand small{font-size:12px}.reward-body .sub{min-height:48px}.task{align-items:center}.task .copy{overflow-wrap:anywhere}.story-copy{min-height:210px}.story-hero{min-height:210px}.story-tag{font-size:12px}.reward-category{font-size:12px}}
 @media(max-width:360px){.brand small{display:none}.task .sub{font-size:14px}.task-kicker{font-size:12px}.story-copy p{font-size:14px}}
+
+/* ===== 交互特效：飞星、彩带爆发、余额弹跳、页面淡入、心情弹跳 ===== */
+@keyframes bump{0%{transform:scale(1)}35%{transform:scale(1.28) rotate(-5deg)}70%{transform:scale(.94)}100%{transform:scale(1)}}
+@keyframes page-in{from{opacity:0;transform:translateY(10px)}to{opacity:1;transform:translateY(0)}}
+@keyframes burst-fly{0%{opacity:1;transform:translate(-50%,-50%) rotate(0deg)}75%{opacity:1}100%{opacity:0;transform:translate(calc(-50% + var(--dx)),calc(-50% + var(--dy))) rotate(var(--spin))}}
+@keyframes pop-choice{0%{transform:scale(.72)}60%{transform:scale(1.14)}100%{transform:scale(1)}}
+.fly-star{position:fixed;z-index:120;width:46px;height:46px;pointer-events:none;transform:translate(-50%,-50%);filter:drop-shadow(0 4px 8px #ffc83d88)}
+.balance.bump{animation:bump .55s ease-out}
+main.page-in{animation:page-in .3s ease-out}
+.moods button.chosen{animation:pop-choice .35s ease-out}
+.burst{position:fixed;inset:0;z-index:110;pointer-events:none;overflow:hidden}
+.burst i{position:absolute;left:50%;top:42%;width:12px;height:12px;border-radius:3px;background:var(--confetti-color);animation:burst-fly var(--dur,1.2s) cubic-bezier(.16,.7,.3,1) forwards}
+@media(prefers-reduced-motion:reduce){.burst,.fly-star{display:none}}
