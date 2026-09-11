@@ -1,0 +1,43 @@
+# dist/ is the editable web-app SOURCE — must be tracked
+bin/
+obj/
+
+# Compiled binaries
+desktop/GrowthApp/
+*.exe
+*.dll
+*.pdb
+*.mdf
+*.ldf
+
+# NuGet / packages
+packages/
+*.nupkg
+**/packages/*
+
+# Publish profiles
+*.pubxml
+
+# User-specific files
+*.user
+*.suo
+*.userosscache
+*.sln.docstates
+
+# VS / Rider / VSCode
+.vs/
+.idea/
+*.swp
+*.swo
+
+# Test results
+[Tt]est[Rr]esult*/
+TestResults/
+
+# OS files
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Logs
+*.log
