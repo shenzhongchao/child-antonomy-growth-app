@@ -43,4 +43,15 @@
 - 家长面板 PIN 码为 1234——仅用于防误触，并非安全机制。需保留此行为。
 - 回归验证：`node scripts/verify.js`（语法检查 + 桩测试 + WebView2 真实渲染验证，截图存 `scripts/shots/`；无 WebView2 环境时用 `node scripts/verify.js --stub`）。改完 `dist/` 后必须跑一遍，全绿再提交。手动验证仍可运行服务器，检查四个页面 + 家长面板，并确认完成任务时会加分（重复完成会被阻止）。
 - 改过 `dist/` 里任何 HTML/CSS/JS 后，务必把 `dist/sw.js` 顶部的 `VERSION` 加一，否则老用户浏览器的 Service Worker 缓存不会刷新。
-- 线上域名与 `localhost`、桌面版是三个互不相通的存储源；网页端数据只存在浏览器本地，家长面板的「备份与恢复」是唯一的迁移手段。
+- 线上域名与 `localhost`、桌面版是三个互不相通的存储源；网页端数据只存在浏览器本地，家长面板的「备份与恢复」是唯一的迁移手段（已登录云端账号时除外，见下）。
+
+## 云端账号与同步（CloudBase）
+
+- Web 应用的云端能力在 `dist/auth.js`（账号/同步）+ `dist/config.js`（只填 envId）里，`app.js` 里只有一处钩子：`save()` 末尾调用 `Cloud.markDirty()`。**不要**把登录或云存储逻辑塞进 `app.js`。
+- 原则：本地优先、永不打扰。`localStorage` 的 `self-growth-v1` 是孩子正在用的数据，云端只是备份；未配置 envId / 未登录 / 断网 / 报错时一律静默降级，不弹错打断孩子。
+- 同步粒度是**整包**：云端 `profiles` 集合里每条文档 = 一个孩子档案，`state` 字段原样存 `blank()` 的结构，不改名不拆分。冲突走 last-write-wins，判不出新旧时弹窗让家长选（选「留本机」会把云端那份另存为 `xxx_old`）。
+- `dist/cloudbase.esm.js` 是**内置的** CloudBase JS SDK v3.9.3（595KB，由 jsdelivr `+esm` 打包，自带依赖、无外部引用）。不要手改；升级时重新下载 `https://cdn.jsdelivr.net/npm/@cloudbase/js-sdk@<版本>/+esm` 覆盖即可。它只在真正用到云端时才被动态 `import()` 加载，不进首屏。
+- 它是平铺在 `dist/` 根目录的，因为 `scripts/pack-web.py` **只收顶层文件且禁止嵌套目录**（EdgeOne 要求 index.html 在压缩包最外层）。别把它挪进子目录，否则打不进 ZIP。
+- 家长面板 →「☁️ 云端账号」是唯一入口，孩子不登录。
+- 登录 API 用的是 `auth.getVerification({phone_number})` + `auth.signInWithSms({verificationInfo, verificationCode, phoneNum})`（手机号要带 `+86 ` 前缀）。控制台开通步骤、数据库安全规则见 `CLOUD.md`。
+- `cloud/phone-login/` 是**二期**小程序手机号登录的云函数脚手架，尚未联调。上小程序时要解决两端 uid 对齐问题（Web 短信登录 uid ≠ 自定义登录 uid），方案见 `CLOUD.md` 第五节。

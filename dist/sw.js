@@ -1,6 +1,6 @@
 // 离线缓存：让「今天我做主」装到手机桌面后没网也能打开。
 // 改完 dist 里的 HTML/CSS/JS 后，把下面 VERSION 加一，用户下次联网打开就会拿到新版。
-const VERSION = 'growth-v1';
+const VERSION = 'growth-v2';
 
 // 页面导航等网络的上限：超过这个时间就用本地缓存顶上，避免弱网/断网时白屏干等。
 const NAV_TIMEOUT_MS = 2500;
@@ -11,6 +11,8 @@ const CORE = [
   './index.html',
   './styles.css',
   './app.js',
+  './config.js',
+  './auth.js',
   './manifest.json',
   './star-friend.webp',
   './favicon-32.png',

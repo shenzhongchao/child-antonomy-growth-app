@@ -1,0 +1,9 @@
+{
+  "name": "phone-login",
+  "version": "0.1.0",
+  "description": "二期：微信小程序手机号一键登录，签发 CloudBase 自定义登录票据",
+  "main": "index.js",
+  "dependencies": {
+    "@cloudbase/node-sdk": "^2.7.1"
+  }
+}

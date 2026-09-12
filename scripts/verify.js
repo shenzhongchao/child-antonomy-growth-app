@@ -257,6 +257,24 @@ async function wv2Tests() {
   // 夜间模式
   mkPage('__v_night.html', `<script>localStorage.setItem('growth-theme','night');</script>`, '');
 
+  // 云端账号区块：未配置 envId 时应正常挂载、提示未配置，且不能有任何 JS 报错
+  mkPage('__v_cloud.html', '', `<script>
+window.__err='';
+window.addEventListener('error',e=>{window.__err+='ERR:'+e.message+';'});
+window.addEventListener('load',()=>{setTimeout(()=>{
+  try{ parentOpen=true; parents();
+    var t=[].slice.call(document.querySelectorAll('summary')).filter(function(x){return x.textContent.indexOf('云端账号')>=0})[0];
+    if(t) t.click(); else window.__err+='NO_SUMMARY;';
+  }catch(e){ window.__err+='PARENT:'+e.message+';'; }
+  setTimeout(()=>{
+    var box=document.getElementById('cloudBox');
+    var d=document.createElement('div');d.id='probe';
+    d.textContent='ERROR=['+window.__err+'] STATUS='+(window.Cloud?Cloud.status():'no-cloud')+' BOX='+(box?box.textContent.slice(0,80):'MISSING');
+    document.body.appendChild(d);
+  },1200);
+},600)});
+</script>`);
+
   const probeOf = dom => { const m = dom.match(/<div id="probe">([^<]*)<\/div>/); return m ? m[1] : '(no probe)'; };
   try {
     const smoke = await runWv2(harness, 'index.html', 'smoke', 2500);
@@ -276,9 +294,15 @@ async function wv2Tests() {
 
     const domN = await runWv2(harness, '__v_night.html', 'night', 2500);
     assert(/<body class="[^"]*night/.test(domN), '夜间模式星空渲染');
+
+    const domC = await runWv2(harness, '__v_cloud.html', 'cloud', 3000);
+    const pC = probeOf(domC);
+    console.log('  云端区块探针:', pC);
+    assert(/ERROR=\[\]/.test(pC), '云端账号区块挂载无 JS 报错');
+    assert(/STATUS=off/.test(pC) && /BOX=未配置云端/.test(pC), '未配置 envId 时提示未配置云端');
     console.log('  截图已保存到 scripts/shots/（smoke/roll/grand/night .json.png）');
   } finally {
-    for (const f of ['__v_roll.html', '__v_grand.html', '__v_night.html']) {
+    for (const f of ['__v_roll.html', '__v_grand.html', '__v_night.html', '__v_cloud.html']) {
       try { fs.unlinkSync(path.join(DIST, f)); } catch {}
     }
   }
@@ -287,10 +311,12 @@ async function wv2Tests() {
 // ---------- 主流程 ----------
 (async () => {
   console.log('== 语法检查 ==');
-  try {
-    execFileSync(process.execPath, ['--check', path.join(DIST, 'app.js')], { stdio: 'pipe' });
-    console.log('ok - node --check dist/app.js');
-  } catch (e) { assert(false, 'app.js 语法检查失败'); }
+  for (const f of ['app.js', 'auth.js', 'config.js', 'sw.js']) {
+    try {
+      execFileSync(process.execPath, ['--check', path.join(DIST, f)], { stdio: 'pipe' });
+      console.log('ok - node --check dist/' + f);
+    } catch (e) { assert(false, f + ' 语法检查失败'); }
+  }
 
   stubTests();
   if (!process.argv.includes('--stub')) await wv2Tests();
