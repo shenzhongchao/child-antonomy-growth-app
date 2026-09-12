@@ -12,7 +12,7 @@ const CORE = [
   './styles.css',
   './app.js',
   './manifest.json',
-  './star-friend.png',
+  './star-friend.webp',
   './favicon-32.png',
   './icon-192.png',
   './icon-512.png',

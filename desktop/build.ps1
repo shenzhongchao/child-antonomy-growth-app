@@ -8,6 +8,7 @@ $out       = Join-Path $scriptDir 'GrowthApp'
 $www       = Join-Path $out 'www'
 $pkg       = Join-Path $scriptDir 'packages'
 $dist      = Join-Path $project 'dist'
+$assets    = Join-Path $project 'assets'
 $ver       = '1.0.992.28'
 $id        = 'microsoft.web.webview2'
 
@@ -18,6 +19,10 @@ if (-not (Test-Path $csc)) { throw 'csc.exe not found (.NET Framework 4.x requir
 New-Item -ItemType Directory -Force -Path $out, $www, $pkg | Out-Null
 
 Write-Host '1/5 copying dist -> GrowthApp\www'
+# Mirror dist/ exactly. Copy-Item only overwrites, so a file deleted from dist/ would
+# otherwise linger in www/ forever. Rebuild the folder from scratch for a clean copy.
+if (Test-Path $www) { [System.IO.Directory]::Delete($www, $true) }
+New-Item -ItemType Directory -Force -Path $www | Out-Null
 Copy-Item (Join-Path $dist '*') $www -Force
 
 Write-Host '2/5 preparing WebView2 SDK (' $ver ')'
@@ -36,7 +41,8 @@ foreach ($f in @('Microsoft.Web.WebView2.Core.dll','Microsoft.Web.WebView2.WinFo
 Copy-Item (Join-Path $extract 'runtimes\win-x64\native\WebView2Loader.dll') $out -Force
 
 Write-Host '3/5 generating icon'
-$pngSrc = Join-Path $dist 'star-friend.png'
+# icons come from assets/ (full-resolution PNG) because GDI+ cannot decode WebP
+$pngSrc = Join-Path $assets 'star-friend.png'
 $ico    = Join-Path $scriptDir 'app.ico'
 if (Test-Path $pngSrc) {
     Add-Type -AssemblyName System.Drawing

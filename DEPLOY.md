@@ -85,8 +85,8 @@ const VERSION = 'growth-v2';   // 原来是 growth-v1
 
 家长面板里已有「备份与恢复」功能，建议定期导出 JSON 留一份。若希望手机和电脑共享同一份记录，需要另做云端同步（可评估 CloudBase 或其它后端方案）。
 
-**2. 首屏图片偏大。**
-`dist/` 里 3 张 PNG 占了约 5.7 MB（`storybook-scene.png` 2.7 MB、`star-friend.png` 1.5 MB、`growth-art.png` 1.3 MB），首次打开在移动网络下会偏慢。转成 WebP 后总体积约 0.45 MB（减少约 88%），但需要同步修改 `styles.css` / `app.js` 里的引用，以及 `desktop/build.ps1` 中生成 `app.ico` 的源图路径。
+**2. 插画已转为 WebP。**
+`assets/` 里 3 张原始 PNG 共 5.6 MB，已转成 `dist/` 下的 WebP（合计约 0.44 MB，**减少 92%**），首屏总重约 570 KB。以后换图：把新图放进 `assets/` 后执行 `python scripts/optimize-images.py`。注意 `growth-art` 是 CSS 雪碧图，脚本已固定按原尺寸转换——改它的尺寸会让任务卡图标全部错位。
 
 **3. 家长 PIN 不是安全机制。**
 PIN `1234` 只用于防误触，无法阻止孩子绕过，请勿把它当成真正的访问控制。

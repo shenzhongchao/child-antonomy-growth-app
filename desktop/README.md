@@ -34,9 +34,9 @@ powershell -ExecutionPolicy Bypass -File desktop\build.ps1
 
 流程：
 
-1. 复制 `dist\*` → `desktop\GrowthApp\www`
+1. 清空 `desktop\GrowthApp\www` 后复制 `dist\*` 过去（严格镜像，避免残留已从 `dist\` 删除的文件）
 2. 下载/解压 WebView2 SDK 1.0.992.28（NuGet 包，仅含托管 DLL，缓存在 `desktop\packages`）
-3. 用 `star-friend.png` 生成 `app.ico`（16/32/48/256 多尺寸）
+3. 用 `assets\star-friend.png` 生成 `app.ico`（16/32/48/256 多尺寸；GDI+ 解不了 WebP，故取 `assets` 中的 PNG 原图）
 4. 用系统自带 `csc.exe`（.NET Framework 4.x，无需安装任何 SDK）编译 `Program.cs`
 
 `Program.cs` 做了三件事（数据桥接）：

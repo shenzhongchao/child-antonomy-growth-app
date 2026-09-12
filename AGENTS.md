@@ -4,7 +4,8 @@
 
 ## 布局 — `dist/` 是源码，而非构建输出
 
-- `dist/` (`index.html`, `app.js`, `styles.css`, 3 张 png, PWA 相关的 `sw.js`/`manifest.json`/6 个图标 png) 是 Web 应用的**可编辑源码**。尽管它叫 "dist"，但它必须被 git 追踪（已在 `.gitignore` 中修复）。
+- `dist/` (`index.html`, `app.js`, `styles.css`, 3 张 webp 插画, PWA 相关的 `sw.js`/`manifest.json`/6 个图标 png) 是 Web 应用的**可编辑源码**。尽管它叫 "dist"，但它必须被 git 追踪（已在 `.gitignore` 中修复）。
+- `assets/` 存放插画的**原始高分辨率 PNG**，网页不会加载它们。改图后跑 `python scripts/optimize-images.py` 重新生成 `dist/*.webp`。原图必须留着：.NET 的 GDI+ 读不了 WebP，桌面构建（`app.ico`）和图标生成都要用 PNG。
 - `release/` 是 `scripts/pack-web.py` 生成的部署 ZIP，属构建产物，已 gitignore。
 - `desktop/GrowthApp/www/` 是 `dist/` 的生成副本（由桌面构建创建）——请勿编辑。
 - `desktop/packages/` = 下载好的 WebView2 NuGet 缓存；`desktop/GrowthApp/` = 构建输出。两者均已被 gitignore。
@@ -18,14 +19,14 @@
 ## Web 部署与 PWA
 
 - 线上部署走腾讯云 EdgeOne Pages「直接上传」，完整步骤见 `DEPLOY.md`。打包：`python scripts/pack-web.py` → `release/today-i-control-pwa.zip`（脚本会把 `dist/` 摊平到 ZIP 最外层并校验，因为 EdgeOne 要求 `index.html` 在压缩包根目录，多套一层会 404）。
-- PWA 三件套：`dist/manifest.json`、`dist/sw.js`、图标一律由 `python scripts/make-icons.py` 从 `dist/star-friend.png` 生成（含 maskable 安全区计算），不要手改图标。
+- PWA 三件套：`dist/manifest.json`、`dist/sw.js`、图标一律由 `python scripts/make-icons.py` 从 `assets/star-friend.png` 生成（含 maskable 安全区计算），不要手改图标。图标保持 PNG（iOS 的 apple-touch-icon 不认 WebP），插画才用 WebP。
 - Service Worker 只在 `https:` / `localhost` 下注册，注册代码内联在 `index.html` 末尾——`app.js` 里没有任何 PWA 或桌面相关代码，保持这样。
 - 导航请求为 network-first，但带 2.5s 超时回退缓存（`NAV_TIMEOUT_MS`）：弱网/断网时不会白屏干等。
 
 ## 桌面构建 (`desktop/build.ps1`)
 
 - 仅需系统自带的 .NET Framework 4.x `csc.exe`；无需 SDK/dotnet/MSBuild。可直接运行。
-- 步骤：复制 `dist/*` → `desktop/GrowthApp/www`；将 WebView2 SDK 1.0.992.28 (nupkg) 下载至 `desktop/packages`；使用 `dist/star-friend.png` 在 `desktop/app.ico` 重新生成 `app.ico`；编译 `desktop/Program.cs`。因此，编辑 Web 应用时总是先修改 `dist/`，然后再重新构建；仅在需要更改 WebView 行为时才编辑 `desktop/Program.cs`。
+- 步骤：复制 `dist/*` → `desktop/GrowthApp/www`（先把 www 整个删掉再复制，保证与 `dist/` 严格一致，否则从 `dist/` 删过的文件会一直残留）；将 WebView2 SDK 1.0.992.28 (nupkg) 下载至 `desktop/packages`；使用 `assets/star-friend.png` 在 `desktop/app.ico` 重新生成 `app.ico`；编译 `desktop/Program.cs`。因此，编辑 Web 应用时总是先修改 `dist/`，然后再重新构建；仅在需要更改 WebView 行为时才编辑 `desktop/Program.cs`。
 
 ## 架构（单应用文件）
 
@@ -36,6 +37,7 @@
 ## 强约束与易踩坑点
 
 - 保持数据兼容性：基于键名 `self-growth-v1` 和由 `blank()` 定义的现有结构 (`days/stars/counts/rewards/name/goal/graduated/prices`)——真实的儿童记录依赖于此；没有迁移机制，请勿重命名或重构字段。
+- `dist/growth-art.webp` 是 CSS 雪碧图：`styles.css` 用 `background-size: 738.5px 1043.7px` 配合绝对像素 `background-position` 定位书包/图书/闹钟等图标，**它的像素尺寸不能改**，否则所有图标错位。`scripts/optimize-images.py` 已固定按原尺寸转换它。改过图片后务必肉眼核对首页与任务卡上的图标。
 - 通过 PowerShell 读取文件时，请显式指定 `-Encoding UTF8`；文件为 UTF-8 编码，PS 5.1 控制台中显示的乱码仅仅是控制台显示问题（已使用 `node --check dist/app.js` 验证）。
 - 编辑前请先运行 Node 语法检查：`node --check dist/app.js`。由于行很长，编辑时切勿使用贪心的全文匹配方式（即避免容易误匹配的多行编辑）。
 - 家长面板 PIN 码为 1234——仅用于防误触，并非安全机制。需保留此行为。

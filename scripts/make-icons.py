@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
-"""Generate PWA icons for dist/ from dist/star-friend.png.
+"""Generate PWA icons for dist/ from assets/star-friend.png.
 
 Usage:
     python scripts/make-icons.py
@@ -21,8 +21,10 @@ except ImportError:
     sys.exit('Pillow is required: pip install Pillow')
 
 HERE = os.path.dirname(os.path.abspath(__file__))
-DIST = os.path.join(os.path.dirname(HERE), 'dist')
-SOURCE = os.path.join(DIST, 'star-friend.png')
+ROOT = os.path.dirname(HERE)
+DIST = os.path.join(ROOT, 'dist')
+# full-resolution source; dist/ only ships the downscaled WebP
+SOURCE = os.path.join(ROOT, 'assets', 'star-friend.png')
 BG = (230, 246, 255, 255)  # #e6f6ff, matches <meta name="theme-color">
 
 MASK_SAFE_RADIUS = 0.40   # Android maskable safe zone = circle of 80% diameter

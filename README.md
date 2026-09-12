@@ -19,9 +19,10 @@ Windows 也可以使用 `py -m http.server 8080 -d dist`。
 - dist/index.html：网页入口
 - dist/styles.css：绘本视觉、贴纸卡片、移动端布局和动态效果
 - dist/app.js：任务、计划、星星、能力、奖励和家长设置
-- dist/growth-art.png：原 A4 成长板图标素材
-- dist/storybook-scene.png：小星星与小兔的绘本场景
-- dist/star-friend.png：透明底小星星伙伴
+- dist/*.webp：网页实际加载的三张插画（由 assets/ 的原图转换而来）
+- assets/growth-art.png：原 A4 成长板图标素材，CSS 按雪碧图坐标裁切
+- assets/storybook-scene.png：小星星与小兔的绘本场景
+- assets/star-friend.png：透明底小星星伙伴
 - .openai/hosting.json：原 Sites 项目的配置
 - ASSETS.md：新增插画的制作说明
 
