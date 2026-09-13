@@ -18,7 +18,9 @@
 
 ## Web 部署与 PWA
 
-- 线上部署走腾讯云 EdgeOne Pages「直接上传」，完整步骤见 `DEPLOY.md`。打包：`python scripts/pack-web.py` → `release/today-i-control-pwa.zip`（脚本会把 `dist/` 摊平到 ZIP 最外层并校验，因为 EdgeOne 要求 `index.html` 在压缩包根目录，多套一层会 404）。
+- 线上部署走腾讯云 **CloudBase 静态网站托管**（上传代码包），完整步骤见 `DEPLOY.md`。打包：`python scripts/pack-web.py` → `release/today-i-control-pwa.zip`（脚本会把 `dist/` 摊平到 ZIP 最外层并校验 `index.html` 在压缩包根目录——多套一层会 404）。控制台填：构建命令留空、构建产物目录 `.`、部署路径 `/`。
+- **绑定自定义域名必须完成 ICP 备案**（CloudBase 强制，未备案绑不上也访问不通）。用 CloudBase 环境当备案资源需同时满足：套餐个人版及以上 + 剩余有效期 ≥ 6 个月 + 已开启云托管固定 IP；管局审核 1–20 个工作日。HTTPS 需自行在 SSL 控制台申请免费 DV 证书再绑定，证书 1 年有效会过期。
+- CloudBase 默认域名 `*.tcloudbaseapp.com` **仅供测试**：浏览器直开会先跳「访问提示中间页」，有访问频率限制，且可能因风控被封禁。不要在文档或配置里把它写成长期入口（这一点曾写错过，务必保持）。
 - PWA 三件套：`dist/manifest.json`、`dist/sw.js`、图标一律由 `python scripts/make-icons.py` 从 `assets/star-friend.png` 生成（含 maskable 安全区计算），不要手改图标。图标保持 PNG（iOS 的 apple-touch-icon 不认 WebP），插画才用 WebP。
 - Service Worker 只在 `https:` / `localhost` 下注册，注册代码内联在 `index.html` 末尾——`app.js` 里没有任何 PWA 或桌面相关代码，保持这样。
 - 导航请求为 network-first，但带 2.5s 超时回退缓存（`NAV_TIMEOUT_MS`）：弱网/断网时不会白屏干等。
