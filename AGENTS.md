@@ -33,13 +33,13 @@
 - 通过 PowerShell 读取文件时，请显式指定 `-Encoding UTF8`；文件为 UTF-8 编码，PS 5.1 控制台中显示的乱码仅仅是控制台显示问题（已使用 `node --check dist/app.js` 验证）。
 - 编辑前请先运行 Node 语法检查：`node --check dist/app.js`。由于行很长，编辑时切勿使用贪心的全文匹配方式（即避免容易误匹配的多行编辑）。
 - 家长面板 PIN 码为 1234——仅用于防误触，并非安全机制。需保留此行为。
-- 回归验证：`node scripts/verify.js`（语法检查 + 桩测试）。改完 `dist/` 后必须跑一遍，全绿再提交。手动验证仍可运行服务器，检查四个页面 + 家长面板，并确认完成任务时会加分（重复完成会被阻止）。
+- 回归验证：`node scripts/verify.js`（语法检查 + 桩测试，含 `auth.js` 的多孩子档案用例）。改完 `dist/` 后必须跑一遍，全绿再提交。手动验证仍可运行服务器，检查四个页面 + 家长面板，并确认完成任务时会加分（重复完成会被阻止）。
 - 改过 `dist/` 里任何 HTML/CSS/JS 后，务必把 `dist/sw.js` 顶部的 `VERSION` 加一，否则老用户浏览器的 Service Worker 缓存不会刷新。
 - 线上域名与 `localhost` 是互不相通的存储源；网页端数据只存在浏览器本地，家长面板的「备份与恢复」是唯一的迁移手段（已登录云端账号时除外，见下）。
 
 ## 云端账号与同步（CloudBase）
 
-- Web 应用的云端能力在 `dist/auth.js`（账号/同步）+ `dist/config.js`（只填 envId）里，`app.js` 里只有一处钩子：`save()` 末尾调用 `Cloud.markDirty()`。**不要**把登录或云存储逻辑塞进 `app.js`。
+- Web 应用的云端能力在 `dist/auth.js`（账号/同步/多孩子档案）+ `dist/config.js`（只填 envId）里。`app.js` 里只有两处钩子：`save()` 末尾调用 `Cloud.markDirty()`，`render()` 末尾调用 `whoChip()`（顶部「当前是谁」胶囊，只在 ≥2 个档案时显示，档案清单由 `Cloud.kids()` 提供）。**不要**把登录或云存储逻辑塞进 `app.js`；`auth.js` 需要重绘孩子界面时走 `window.render()`（本文件内同名函数会遮蔽它，见 `paintApp()`）。
 - 原则：本地优先、永不打扰。`localStorage` 的 `self-growth-v1` 是孩子正在用的数据，云端只是备份；未配置 envId / 未登录 / 断网 / 报错时一律静默降级，不弹错打断孩子。
 - 同步粒度是**整包**：云端 **PostgreSQL** `profiles` 表里每一行 = 一个孩子档案，`state` 字段（jsonb）原样存 `blank()` 的结构，不改名不拆分。冲突走 last-write-wins，判不出新旧时弹窗让家长选（选「留本机」会把云端那份另存为 `xxx_old`）。
 - **本环境是 PG 模式，文档型数据库实测不可用**（`tcb db nosql execute` 取不到 Mongo 连接器，控制台无「新建集合」入口）—— 别再照官方文档想当然。`auth.js` 的数据层用 `app.rdb().from('profiles')`（PostgREST 风格，返回 `{data, error}`），字段映射集中在 `rowOf()` / `writeProfile()` 里：表列 `id/user_id/name/phone/state/updated_at` ↔ 上层沿用的 `_id/userId/.../updatedAt`。改数据层不要动上层命名。
@@ -48,6 +48,14 @@
   重新生成：临时目录 `npm i @cloudbase/js-sdk@<版本> esbuild`，入口文件写 `import cb from '@cloudbase/js-sdk'; export default cb;`，再 `esbuild --bundle --format=esm --minify --target=es2019`。生成后用 `grep -c '/npm/'` 确认结果为 0。
   它只在真正用到云端时才被动态 `import()` 加载（URL 带 `?v=` 防止 Service Worker 缓存旧版），不进首屏。
 - 它是平铺在 `dist/` 根目录的，因为 `scripts/pack-web.py` **只收顶层文件且禁止嵌套目录**（EdgeOne 要求 index.html 在压缩包最外层）。别把它挪进子目录，否则打不进 ZIP。
-- 家长面板 →「☁️ 云端账号」是唯一入口，孩子不登录。
+- 家长面板 →「👧 孩子档案」是档案的唯一入口（改名 / 列表 / 切换 / 添加），不依赖登录；「☁️ 云端备份」只管登录与同步状态。孩子不登录。
 - 登录 API 用的是 `auth.getVerification({phone_number})` + `auth.signInWithSms({verificationInfo, verificationCode, phoneNum})`（手机号要带 `+86 ` 前缀）。控制台开通步骤、数据库安全规则见 `CLOUD.md`。
 - `cloud/phone-login/` 是**二期**小程序手机号登录的云函数脚手架，尚未联调。上小程序时要解决两端 uid 对齐问题（Web 短信登录 uid ≠ 自定义登录 uid），方案见 `CLOUD.md` 第五节。
+
+## 多个孩子（一台设备）
+
+- **本机同时只有一份活动数据**：`self-growth-v1` 永远是「正在用的那个孩子」；其余孩子的记录缓存在 `self-growth-archive-v1`（`{ [档案id]: { name, state, updatedAt } }`），由 `auth.js` 的 `keep()` 维护。**两份数据的 state 结构完全一致**，都来自 `blank()`。
+- 档案清单 = 本机缓存 ∪ 云端返回（`kids()`）；当前那份以本机内容为准（昵称可能刚改过）。有 ≥2 份时顶部出现胶囊，点开就是孩子端的「今天是谁呀？」（`openKidPicker()`，不需要家长 PIN）。
+- **换孩子前必须先 `push()` 成功**（`guardLocal()`）。上传失败要在弹窗里让家长选「再试一次 / 不等了直接继续 / 先不换了」，绝不静默用云端那份覆盖本机。`switchChild()` / `addChild()` 都走这条路径，新增类似动作时也要走。
+- 未配置 envId 时也能多孩子（纯本机档案），此时 `guardLocal()` 直接放行 —— 别让它去 `import()` 那个 785KB 的 SDK。
+- 云端 `profiles` 一行 = 一个孩子；`listProfiles()` 按 `user_id` 取，`switchChild` 切换的是 `meta.profileId`。

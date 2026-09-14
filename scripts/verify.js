@@ -1,8 +1,9 @@
 // 一键回归验证：语法检查 + 桩测试（逻辑）
 // 用法：node scripts/verify.js
-// 桩测试覆盖：备份恢复 / 徽章升级 / 今日大满贯 / 夜间自动切换 / 星星滚动上账
+// 桩测试覆盖：备份恢复 / 徽章升级 / 今日大满贯 / 夜间自动切换 / 星星滚动上账 / 多孩子档案
 const fs = require('fs');
 const path = require('path');
+const vm = require('vm');
 const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
@@ -28,28 +29,28 @@ const daySeed = (dayOver = {}) => ({
 });
 
 // ---------- 桩环境 ----------
+const mkClassList = () => {
+  const set = new Set();
+  return {
+    add: c => set.add(c), remove: c => set.delete(c),
+    toggle: (c, f) => { if (f === undefined) f = !set.has(c); f ? set.add(c) : set.delete(c); },
+    contains: c => set.has(c),
+  };
+};
+const mkEl = () => ({
+  innerHTML: '', value: '', open: false, textContent: '', hidden: false, title: '', _kids: [],
+  classList: mkClassList(),
+  showModal() { this.open = true; }, close() { this.open = false; },
+  appendChild(c) { this._kids.push(c); }, remove() {}, click() {},
+  setAttribute() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
+  animate() { const a = {}; Object.defineProperty(a, 'onfinish', { set(fn) { a._f = fn; } }); globalThis.__lastAnim = a; return a; },
+  style: {},
+});
 function makeStubs(opts = {}) {
   const { seed, stored = {}, hour = 12, dark = false, reduced = false } = opts;
   const store = Object.assign({}, stored);
   if (seed) store['self-growth-v1'] = JSON.stringify(seed);
   const elements = {}, qels = {};
-  const mkClassList = () => {
-    const set = new Set();
-    return {
-      add: c => set.add(c), remove: c => set.delete(c),
-      toggle: (c, f) => { if (f === undefined) f = !set.has(c); f ? set.add(c) : set.delete(c); },
-      contains: c => set.has(c),
-    };
-  };
-  const mkEl = () => ({
-    innerHTML: '', value: '', open: false, textContent: '', _kids: [],
-    classList: mkClassList(),
-    showModal() { this.open = true; }, close() { this.open = false; },
-    appendChild(c) { this._kids.push(c); }, remove() {}, click() {},
-    setAttribute() {}, getBoundingClientRect: () => ({ left: 0, top: 0, width: 0, height: 0 }),
-    animate() { const a = {}; Object.defineProperty(a, 'onfinish', { set(fn) { a._f = fn; } }); globalThis.__lastAnim = a; return a; },
-    style: {},
-  });
   globalThis.localStorage = {
     getItem: k => (k in store ? store[k] : null),
     setItem: (k, v) => { store[k] = String(v); },
@@ -189,6 +190,73 @@ assert(starRollFrom === null, '大满贯落地后 starRollFrom 复位');
   assert(String(ctx.qels['.balance-num'].textContent) === '6', '大满贯路径数字定格新值');
 }
 
+// ---------- auth.js：多孩子档案（本机缓存 + 切换保险） ----------
+// auth.js 是 IIFE，且要拿到 app.js 的 window.render，所以这里用 runInThisContext
+// 让两个脚本跑在真正的全局作用域里（window 直接指向 globalThis）。
+async function archiveTests() {
+  console.log('\n== 桩测试：多孩子档案 ==');
+  const store = { 'self-growth-v1': JSON.stringify(mkSeed({ name: '哥哥', stars: 5, counts: [1, 0, 0, 0, 0, 0] })) };
+  const elements = {};
+  globalThis.window = globalThis;
+  globalThis.localStorage = {
+    getItem: k => (k in store ? store[k] : null),
+    setItem: (k, v) => { store[k] = String(v); },
+    removeItem: k => { delete store[k]; },
+  };
+  globalThis.document = {
+    readyState: 'complete',
+    getElementById: id => (elements[id] ??= mkEl()),
+    createElement: () => mkEl(),
+    querySelector: () => mkEl(),
+    addEventListener() {},
+    body: { appendChild() {}, classList: mkClassList() },
+    hidden: false,
+  };
+  globalThis.location = { protocol: 'https:', href: 'https://localhost/' };
+  globalThis.matchMedia = () => ({ matches: false, addEventListener() {} });
+  globalThis.scrollTo = () => {};
+  globalThis.innerWidth = 400; globalThis.innerHeight = 800;
+  globalThis.setInterval = () => 0;
+  globalThis.setTimeout = () => 0;
+  globalThis.Date = RealDate;
+  globalThis.GROWTH_CLOUD = { envId: '' };   // 未配置云端：纯本机多档案
+
+  vm.runInThisContext(fs.readFileSync(path.join(DIST, 'app.js'), 'utf8'), { filename: 'app.js' });
+  vm.runInThisContext(fs.readFileSync(path.join(DIST, 'auth.js'), 'utf8'), { filename: 'auth.js' });
+  const tick = () => new Promise(r => process.nextTick(r));
+  const state = () => JSON.parse(localStorage.getItem('self-growth-v1'));
+
+  assert(typeof Cloud === 'object' && Cloud.configured() === false, '未配置云端时 Cloud 可用');
+  assert(Cloud.kids().length === 0, '尚无档案时 kids() 为空');
+
+  elements.kidName = mkEl(); elements.kidName.value = '哥哥';
+  Cloud.renameCurrent();
+  await tick();
+  assert(Cloud.kids().length === 1, '改昵称后建立第 1 份档案');
+  const pid1 = JSON.parse(localStorage.getItem('self-growth-cloud-v1')).profileId;
+  assert(!!pid1, '第 1 份档案拿到 id');
+
+  elements.clNew = mkEl(); elements.clNew.value = '弟弟';
+  await Cloud.addChild();
+  assert(Cloud.kids().length === 2, '添加后共 2 份档案');
+  assert(state().name === '弟弟', '已切到新档案');
+  const arch = JSON.parse(localStorage.getItem('self-growth-archive-v1'));
+  assert(!!(arch[pid1] && arch[pid1].state.stars === 5), '哥哥的 5 颗星完整留在本机缓存');
+  const kid1 = Cloud.kids().find(k => k.id === pid1);
+  assert(!!(kid1 && kid1.cur === false), '哥哥不再是当前档案');
+
+  await Cloud.switchChild(pid1);
+  assert(state().stars === 5 && state().name === '哥哥', '切回哥哥后星星完好');
+  const kid2 = Cloud.kids().find(k => k.id !== pid1);
+  assert(!!(kid2 && !kid2.cur), '弟弟仍在档案列表里');
+
+  await Cloud.switchChild(kid2.id);
+  assert(state().name === '弟弟' && state().stars === 0 && !state().counts.some(x => x > 0), '两兄弟的记录互不污染');
+
+  assert(elements.who.hidden === false && elements.who.innerHTML.includes('弟弟'), '顶部胶囊显示当前孩子');
+  assert(typeof Cloud.guard === 'function' && typeof Cloud.openKidPicker === 'function', '切换保护与选人入口已注册');
+}
+
 // ---------- 主流程 ----------
 (async () => {
   console.log('== 语法检查 ==');
@@ -200,6 +268,7 @@ assert(starRollFrom === null, '大满贯落地后 starRollFrom 复位');
   }
 
   stubTests();
+  await archiveTests();
 
   console.log('\n' + (failures ? `共 ${failures} 项失败` : 'ALL_PASS'));
   process.exit(failures ? 1 : 0);

@@ -132,3 +132,21 @@ body.night .celebration{box-shadow:0 0 26px #ffd75d55}
 .levelup{text-align:center}.levelup .completion-art{margin:0 auto}.levelup .eyebrow{margin-bottom:2px}.levelup h2{margin:4px 0 2px}.skill-stars.big{font-size:38px;letter-spacing:8px;margin:10px 0 14px;text-shadow:0 0 14px #ffd75d88}.skill-stars.big span{display:inline-block}@keyframes badge-pop{0%{transform:scale(0) rotate(-40deg);opacity:0}70%{transform:scale(1.25) rotate(6deg)}100%{transform:scale(1) rotate(0);opacity:1}}@media(prefers-reduced-motion:no-preference){.skill-stars.big span{animation:badge-pop .5s cubic-bezier(.3,1.4,.5,1) both}.skill-stars.big span:nth-child(2){animation-delay:.18s}.skill-stars.big span:nth-child(3){animation-delay:.36s}}
 .grandslam h2{background:linear-gradient(92deg,#e2a200,#ff8a5c 45%,#e2a200);-webkit-background-clip:text;background-clip:text;color:transparent}.grandslam .skill-stars.big{text-shadow:0 0 18px #ffc83dcc}@keyframes crown-sway{0%,100%{transform:rotate(-5deg) translateY(0)}50%{transform:rotate(5deg) translateY(-6px)}}@media(prefers-reduced-motion:no-preference){.grandslam .completion-art{animation:crown-sway 1.6s ease-in-out 2}}
 .balance-num{display:inline-block;overflow:hidden;height:1.25em;line-height:1.25em;vertical-align:bottom;min-width:.7em;text-align:center}.num-roll{display:inline-flex;flex-direction:column;animation:num-roll .48s cubic-bezier(.3,.7,.4,1) both}.num-roll span{display:block;height:1.25em;line-height:1.25em}@keyframes num-roll{from{transform:translateY(0)}to{transform:translateY(-1.25em)}}
+
+/* ===== 当前孩子标识 + 多孩子档案 ===== */
+.who{display:flex;align-items:center;gap:7px;background:#fff6df;border:2px solid #e8cf95;border-radius:25px;padding:6px 16px 6px 6px;font-size:15px;font-weight:850;color:#7a5a1c;box-shadow:0 3px 0 #e6d3a5;max-width:210px}
+.who img{width:32px;height:32px;object-fit:contain}
+.who span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.who[hidden]{display:none}
+body.night .who{background:#4a3d15;border-color:#c09a4a;color:#ffd88a;box-shadow:0 3px 0 #2c2410}
+.kidpick{display:grid;gap:11px}
+.kidpick button{display:flex;flex-direction:column;gap:4px;width:100%;text-align:left;padding:15px 17px;border:2px solid #cfe6f2;border-radius:18px;background:#f7fcff;box-shadow:0 3px 0 #dceaf2}
+.kidpick button.cur{border-color:#e2b642;background:#fff6df;box-shadow:0 3px 0 #e6d3a5}
+.kidpick strong{font-size:17px}
+.kidpick .sub{font-size:13px;color:var(--muted)}
+body.night .kidpick button{background:#22305c;border-color:#4553a0;color:#e9e6ff;box-shadow:0 3px 0 #16204a}
+body.night .kidpick button.cur{background:#4a3d15;border-color:#c09a4a;box-shadow:0 3px 0 #2c2410}
+body.night .kidpick .sub{color:#a3b8e8}
+@media(max-width:720px){header{gap:6px}.brand{min-width:0}.brand>div{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.header-actions{gap:7px;flex-shrink:0}.who{font-size:13px;padding:5px 10px 5px 5px;max-width:118px;flex-shrink:1;min-width:0}.who img{width:25px;height:25px}}
+@media(max-width:520px){.brand small{display:none}}
+@media(max-width:400px){.who{max-width:86px;font-size:12px;padding:4px 8px 4px 4px}.who img{width:22px;height:22px}}
