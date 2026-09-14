@@ -226,7 +226,7 @@
   /* ---------- 家长面板 UI ---------- */
 
   function statusText() {
-    if (_status === 'off') return '未配置云端（仅本机保存）';
+    if (_status === 'off') return '云端未开通（仅本机保存）';
     if (_status === 'error') return '同步有问题：' + _error;
     if (_status === 'login') return '已配置，待登录';
     return '已开启 · 上次同步 ' + when(meta.lastSync);
@@ -243,7 +243,7 @@
     if (!el) return;
     var h = '<p class="sub">' + esc(statusText()) + '</p>';
     if (_status === 'off') {
-      h += '<p class="sub">还没填 CloudBase 环境 ID。填了之后换手机、换浏览器都不会丢记录，步骤见 CLOUD.md。</p>';
+      h += '<p class="sub">云端暂未开通，记录目前只保存在本机，可用「备份与恢复」导出存档。</p>';
     } else if (_status === 'login' || (_status === 'error' && !meta.profileId)) {
       h += '<label>家长手机号<input id="clPhone" inputmode="numeric" maxlength="11" autocomplete="tel" placeholder="13800138000"></label>' +
         '<label>短信验证码<input id="clCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位数字"></label>' +
@@ -379,6 +379,7 @@
     switchChild: switchChild,
     resolveConflict: resolveConflict,
     markDirty: markDirty,
+    configured: function () { return configured(); },
     status: function () { return _status; },
   };
 

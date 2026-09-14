@@ -257,14 +257,14 @@ async function wv2Tests() {
   // 夜间模式
   mkPage('__v_night.html', `<script>localStorage.setItem('growth-theme','night');</script>`, '');
 
-  // 云端账号区块：未配置 envId 时应正常挂载、提示未配置，且不能有任何 JS 报错
+  // 云端账号区块：未配置 envId 时家长面板不应出现该入口，且不能有任何 JS 报错
   mkPage('__v_cloud.html', '', `<script>
 window.__err='';
 window.addEventListener('error',e=>{window.__err+='ERR:'+e.message+';'});
 window.addEventListener('load',()=>{setTimeout(()=>{
   try{ parentOpen=true; parents();
     var t=[].slice.call(document.querySelectorAll('summary')).filter(function(x){return x.textContent.indexOf('云端账号')>=0})[0];
-    if(t) t.click(); else window.__err+='NO_SUMMARY;';
+    if(t) window.__err+='SUMMARY_VISIBLE;';
   }catch(e){ window.__err+='PARENT:'+e.message+';'; }
   setTimeout(()=>{
     var box=document.getElementById('cloudBox');
@@ -298,8 +298,8 @@ window.addEventListener('load',()=>{setTimeout(()=>{
     const domC = await runWv2(harness, '__v_cloud.html', 'cloud', 3000);
     const pC = probeOf(domC);
     console.log('  云端区块探针:', pC);
-    assert(/ERROR=\[\]/.test(pC), '云端账号区块挂载无 JS 报错');
-    assert(/STATUS=off/.test(pC) && /BOX=未配置云端/.test(pC), '未配置 envId 时提示未配置云端');
+    assert(/ERROR=\[\]/.test(pC), '云端账号入口未显示且无 JS 报错');
+    assert(!/SUMMARY_VISIBLE/.test(pC) && /BOX=MISSING/.test(pC), '未配置 envId 时家长面板不显示云端账号入口');
     console.log('  截图已保存到 scripts/shots/（smoke/roll/grand/night .json.png）');
   } finally {
     for (const f of ['__v_roll.html', '__v_grand.html', '__v_night.html', '__v_cloud.html']) {
