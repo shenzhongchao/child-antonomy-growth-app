@@ -5,16 +5,13 @@
 ## 布局 — `dist/` 是源码，而非构建输出
 
 - `dist/` (`index.html`, `app.js`, `styles.css`, 3 张 webp 插画, PWA 相关的 `sw.js`/`manifest.json`/6 个图标 png) 是 Web 应用的**可编辑源码**。尽管它叫 "dist"，但它必须被 git 追踪（已在 `.gitignore` 中修复）。
-- `assets/` 存放插画的**原始高分辨率 PNG**，网页不会加载它们。改图后跑 `python scripts/optimize-images.py` 重新生成 `dist/*.webp`。原图必须留着：.NET 的 GDI+ 读不了 WebP，桌面构建（`app.ico`）和图标生成都要用 PNG。
+- `assets/` 存放插画的**原始高分辨率 PNG**，网页不会加载它们。改图后跑 `python scripts/optimize-images.py` 重新生成 `dist/*.webp`。原图必须留着：图标生成（`make-icons.py`）需要读 PNG。
 - `release/` 是 `scripts/pack-web.py` 生成的部署 ZIP，属构建产物，已 gitignore。
-- `desktop/GrowthApp/www/` 是 `dist/` 的生成副本（由桌面构建创建）——请勿编辑。
-- `desktop/packages/` = 下载好的 WebView2 NuGet 缓存；`desktop/GrowthApp/` = 构建输出。两者均已被 gitignore。
 - `.openai/hosting.json` 是已废弃的托管网站遗留配置；对本地运行无影响。
 
 ## 运行
 
 - Web: `python -m http.server 8080 -d dist` (或 Windows 下使用 `py -m ...`)，打开 http://localhost:8080。localStorage 持久化需要同源，因此不能使用 `file://` 协议。
-- 桌面端 (Windows, 从仓库根目录运行): `powershell -ExecutionPolicy Bypass -File desktop\build.ps1` (可加 `-Shortcut` 参数以创建桌面快捷方式)。
 
 ## Web 部署与 PWA
 
@@ -22,19 +19,12 @@
 - **绑定自定义域名必须完成 ICP 备案**（CloudBase 强制，未备案绑不上也访问不通）。用 CloudBase 环境当备案资源需同时满足：套餐个人版及以上 + 剩余有效期 ≥ 6 个月 + 已开启云托管固定 IP；管局审核 1–20 个工作日。HTTPS 需自行在 SSL 控制台申请免费 DV 证书再绑定，证书 1 年有效会过期。
 - CloudBase 默认域名 `*.tcloudbaseapp.com` **仅供测试**：浏览器直开会先跳「访问提示中间页」，有访问频率限制，且可能因风控被封禁。不要在文档或配置里把它写成长期入口（这一点曾写错过，务必保持）。
 - PWA 三件套：`dist/manifest.json`、`dist/sw.js`、图标一律由 `python scripts/make-icons.py` 从 `assets/star-friend.png` 生成（含 maskable 安全区计算），不要手改图标。图标保持 PNG（iOS 的 apple-touch-icon 不认 WebP），插画才用 WebP。
-- Service Worker 只在 `https:` / `localhost` 下注册，注册代码内联在 `index.html` 末尾——`app.js` 里没有任何 PWA 或桌面相关代码，保持这样。
+- Service Worker 只在 `https:` / `localhost` 下注册，注册代码内联在 `index.html` 末尾——`app.js` 里没有任何 PWA 相关代码，保持这样。
 - 导航请求为 network-first，但带 2.5s 超时回退缓存（`NAV_TIMEOUT_MS`）：弱网/断网时不会白屏干等。
-
-## 桌面构建 (`desktop/build.ps1`)
-
-- 仅需系统自带的 .NET Framework 4.x `csc.exe`；无需 SDK/dotnet/MSBuild。可直接运行。
-- 步骤：复制 `dist/*` → `desktop/GrowthApp/www`（先把 www 整个删掉再复制，保证与 `dist/` 严格一致，否则从 `dist/` 删过的文件会一直残留）；将 WebView2 SDK 1.0.992.28 (nupkg) 下载至 `desktop/packages`；使用 `assets/star-friend.png` 在 `desktop/app.ico` 重新生成 `app.ico`；编译 `desktop/Program.cs`。因此，编辑 Web 应用时总是先修改 `dist/`，然后再重新构建；仅在需要更改 WebView 行为时才编辑 `desktop/Program.cs`。
 
 ## 架构（单应用文件）
 
 - `dist/app.js` (~20KB, 65 行，行很长)：全局状态 `s` 从 localStorage 键 `self-growth-v1` 加载；`save()` 持久化该状态；`render()` 通过字符串模板和内联 `onclick` 处理程序重新渲染整个四页面 UI（今天/计划/成长/奖励）。
-- 桌面桥接 (`Program.cs`)：启动时将 `~/.growth/data.json` 注入到页面的 localStorage 中，并挂钩 `save()` 以便将更改写回磁盘。此处 `app.js` 中**没有**任何针对桌面的代码——保持 `save()` 和 localStorage 键名不变。
-- Web 应用数据存储在浏览器 localStorage 中；桌面端数据保存在 `~/.growth/data.json` 中。两者是独立的源（origin），因此记录不会互通。
 
 ## 强约束与易踩坑点
 
@@ -43,9 +33,9 @@
 - 通过 PowerShell 读取文件时，请显式指定 `-Encoding UTF8`；文件为 UTF-8 编码，PS 5.1 控制台中显示的乱码仅仅是控制台显示问题（已使用 `node --check dist/app.js` 验证）。
 - 编辑前请先运行 Node 语法检查：`node --check dist/app.js`。由于行很长，编辑时切勿使用贪心的全文匹配方式（即避免容易误匹配的多行编辑）。
 - 家长面板 PIN 码为 1234——仅用于防误触，并非安全机制。需保留此行为。
-- 回归验证：`node scripts/verify.js`（语法检查 + 桩测试 + WebView2 真实渲染验证，截图存 `scripts/shots/`；无 WebView2 环境时用 `node scripts/verify.js --stub`）。改完 `dist/` 后必须跑一遍，全绿再提交。手动验证仍可运行服务器，检查四个页面 + 家长面板，并确认完成任务时会加分（重复完成会被阻止）。
+- 回归验证：`node scripts/verify.js`（语法检查 + 桩测试）。改完 `dist/` 后必须跑一遍，全绿再提交。手动验证仍可运行服务器，检查四个页面 + 家长面板，并确认完成任务时会加分（重复完成会被阻止）。
 - 改过 `dist/` 里任何 HTML/CSS/JS 后，务必把 `dist/sw.js` 顶部的 `VERSION` 加一，否则老用户浏览器的 Service Worker 缓存不会刷新。
-- 线上域名与 `localhost`、桌面版是三个互不相通的存储源；网页端数据只存在浏览器本地，家长面板的「备份与恢复」是唯一的迁移手段（已登录云端账号时除外，见下）。
+- 线上域名与 `localhost` 是互不相通的存储源；网页端数据只存在浏览器本地，家长面板的「备份与恢复」是唯一的迁移手段（已登录云端账号时除外，见下）。
 
 ## 云端账号与同步（CloudBase）
 

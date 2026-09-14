@@ -1,15 +1,12 @@
-// 一键回归验证：语法检查 + 桩测试（逻辑） + WebView2 真实渲染验证（视觉/DOM）
-// 用法：node scripts/verify.js          全部验证
-//       node scripts/verify.js --stub   只跑语法检查 + 桩测试（无 WebView2 环境时用）
+// 一键回归验证：语法检查 + 桩测试（逻辑）
+// 用法：node scripts/verify.js
 // 桩测试覆盖：备份恢复 / 徽章升级 / 今日大满贯 / 夜间自动切换 / 星星滚动上账
-// WebView2 覆盖：首页渲染 / 普通得星滚动 / 大满贯得星滚动 / 夜间模式，截图存 scripts/shots/
 const fs = require('fs');
 const path = require('path');
-const { execFileSync, spawn } = require('child_process');
+const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
-const SHOTS = path.join(ROOT, 'scripts', 'shots');
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
 const RealDate = Date;
 
@@ -192,122 +189,6 @@ assert(starRollFrom === null, '大满贯落地后 starRollFrom 复位');
   assert(String(ctx.qels['.balance-num'].textContent) === '6', '大满贯路径数字定格新值');
 }
 
-// ---------- WebView2 真实渲染验证 ----------
-function ensureHarness() {
-  const dir = path.join(ROOT, 'scripts', 'wv2');
-  const exe = path.join(dir, 'Harness.exe');
-  const cs = path.join(dir, 'Harness.cs');
-       if (fs.existsSync(exe) && fs.statSync(exe).mtimeMs >= fs.statSync(cs).mtimeMs) return exe;
-  const dlls = [
-    ['Microsoft.Web.WebView2.Core.dll', path.join('desktop', 'packages', 'core', 'lib', 'net45')],
-    ['Microsoft.Web.WebView2.WinForms.dll', path.join('desktop', 'packages', 'core', 'lib', 'net45')],
-    ['WebView2Loader.dll', path.join('desktop', 'packages', 'core', 'runtimes', 'win-x64', 'native')],
-  ];
-  for (const [f, fallback] of dlls) {
-    let src = path.join(ROOT, 'desktop', 'GrowthApp', f);
-    if (!fs.existsSync(src)) src = path.join(ROOT, fallback, f);
-    if (!fs.existsSync(src)) { console.error('缺少 ' + f + '，请先运行 desktop/build.ps1 一次'); return null; }
-    fs.copyFileSync(src, path.join(dir, f));
-  }
-  const windir = process.env.WINDIR || 'C:\\Windows';
-  let csc = path.join(windir, 'Microsoft.NET', 'Framework64', 'v4.0.30319', 'csc.exe');
-  if (!fs.existsSync(csc)) csc = path.join(windir, 'Microsoft.NET', 'Framework', 'v4.0.30319', 'csc.exe');
-  if (!fs.existsSync(csc)) { console.error('未找到 csc.exe'); return null; }
-  try {
-    execFileSync(csc, ['-nologo', '-target:exe', '-out:Harness.exe',
-      '-r:Microsoft.Web.WebView2.Core.dll', '-r:Microsoft.Web.WebView2.WinForms.dll',
-      '-r:System.dll', '-r:System.Core.dll', '-r:System.Drawing.dll', '-r:System.Windows.Forms.dll',
-      'Harness.cs'], { cwd: dir, stdio: 'pipe' });
-  } catch (e) { console.error('Harness 编译失败: ' + e.message); return null; }
-  return fs.existsSync(exe) ? exe : null;
-}
-
-function runWv2(harness, page, outName, waitMs) {
-  return new Promise((resolve) => {
-    fs.mkdirSync(SHOTS, { recursive: true });
-    const out = path.join(SHOTS, outName + '.json');
-    const url = 'file:///' + path.join(DIST, page).replace(/\\/g, '/');
-    const proc = spawn(harness, [url, out, String(waitMs)]);
-    proc.on('close', () => {
-      let dom = '';
-      try { dom = JSON.parse(fs.readFileSync(out, 'utf8')); } catch {}
-      resolve(dom);
-    });
-    proc.on('error', () => resolve(''));
-  });
-}
-
-async function wv2Tests() {
-  console.log('\n== WebView2 真实渲染验证 ==');
-  const harness = ensureHarness();
-  if (!harness) { console.error('WebView2 验证跳过（环境不可用），仅桩测试生效'); return; }
-
-  const idx = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
-  const seedScript = seed => `<script>localStorage.setItem('self-growth-v1','${JSON.stringify(seed).replace(/'/g, "\\'")}');</script>`;
-  const probeJs = `setTimeout(()=>{const d=document.createElement('div');d.id='probe';d.textContent='rollFrom='+String(starRollFrom)+' stars='+s.stars+' num='+(document.querySelector('.balance-num')||{}).textContent;document.body.appendChild(d)},1500)`;
-  const mkPage = (name, head, tail) => fs.writeFileSync(path.join(DIST, name),
-    idx.replace('<script src="app.js', head + '<script src="app.js').replace('</body></html>', tail + '</body></html>'));
-
-  // 普通得星（另一项提醒后完成，不触发大满贯）
-  mkPage('__v_roll.html', seedScript(mkSeed({ stars: 5, days: daySeed({ selected: [0, 1], done: { 1: 'help' } }) })),
-    `<script>window.addEventListener('load',()=>{finish(0,'self');${probeJs}});</script>`);
-  // 大满贯得星（回归：修复前此路径钱包数字卡死）
-  mkPage('__v_grand.html', seedScript(mkSeed({ stars: 5, days: daySeed({ selected: [0] }) })),
-    `<script>window.addEventListener('load',()=>{finish(0,'self');${probeJs}});</script>`);
-  // 夜间模式
-  mkPage('__v_night.html', `<script>localStorage.setItem('growth-theme','night');</script>`, '');
-
-  // 云端账号区块：未配置 envId 时家长面板不应出现该入口，且不能有任何 JS 报错
-  mkPage('__v_cloud.html', '', `<script>
-window.__err='';
-window.addEventListener('error',e=>{window.__err+='ERR:'+e.message+';'});
-window.addEventListener('load',()=>{setTimeout(()=>{
-  try{ parentOpen=true; parents();
-    var t=[].slice.call(document.querySelectorAll('summary')).filter(function(x){return x.textContent.indexOf('云端账号')>=0})[0];
-    if(t) window.__err+='SUMMARY_VISIBLE;';
-  }catch(e){ window.__err+='PARENT:'+e.message+';'; }
-  setTimeout(()=>{
-    var box=document.getElementById('cloudBox');
-    var d=document.createElement('div');d.id='probe';
-    d.textContent='ERROR=['+window.__err+'] STATUS='+(window.Cloud?Cloud.status():'no-cloud')+' BOX='+(box?box.textContent.slice(0,80):'MISSING');
-    document.body.appendChild(d);
-  },1200);
-},600)});
-</script>`);
-
-  const probeOf = dom => { const m = dom.match(/<div id="probe">([^<]*)<\/div>/); return m ? m[1] : '(no probe)'; };
-  try {
-    const smoke = await runWv2(harness, 'index.html', 'smoke', 2500);
-    assert(smoke.includes('今天我做主') && smoke.includes('balance-num'), '首页正常渲染');
-
-    const domA = await runWv2(harness, '__v_roll.html', 'roll', 3000);
-    const pA = probeOf(domA);
-    console.log('  普通得星探针:', pA);
-    assert(/rollFrom=null stars=6 num=6/.test(pA), '普通得星滚动定格新数字');
-    assert(!domA.includes('今日大满贯'), '普通得星不触发大满贯');
-
-    const domB = await runWv2(harness, '__v_grand.html', 'grand', 3000);
-    const pB = probeOf(domB);
-    console.log('  大满贯探针:', pB);
-    assert(domB.includes('今日大满贯'), '大满贯弹窗出现');
-    assert(/rollFrom=null stars=6 num=6/.test(pB), '大满贯得星滚动定格新数字');
-
-    const domN = await runWv2(harness, '__v_night.html', 'night', 2500);
-    assert(/<body class="[^"]*night/.test(domN), '夜间模式星空渲染');
-
-    const domC = await runWv2(harness, '__v_cloud.html', 'cloud', 3000);
-    const pC = probeOf(domC);
-    console.log('  云端区块探针:', pC);
-    assert(/ERROR=\[\]/.test(pC), '云端账号入口未显示且无 JS 报错');
-    assert(!/SUMMARY_VISIBLE/.test(pC) && /BOX=MISSING/.test(pC), '未配置 envId 时家长面板不显示云端账号入口');
-    console.log('  截图已保存到 scripts/shots/（smoke/roll/grand/night .json.png）');
-  } finally {
-    for (const f of ['__v_roll.html', '__v_grand.html', '__v_night.html', '__v_cloud.html']) {
-      try { fs.unlinkSync(path.join(DIST, f)); } catch {}
-    }
-  }
-}
-
 // ---------- 主流程 ----------
 (async () => {
   console.log('== 语法检查 ==');
@@ -319,7 +200,6 @@ window.addEventListener('load',()=>{setTimeout(()=>{
   }
 
   stubTests();
-  if (!process.argv.includes('--stub')) await wv2Tests();
 
   console.log('\n' + (failures ? `共 ${failures} 项失败` : 'ALL_PASS'));
   process.exit(failures ? 1 : 0);

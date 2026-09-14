@@ -15,8 +15,7 @@ CONSTRAINTS — do not "improve" these without checking the CSS:
     offsets (.bag { background-position: -63px -328px }, etc.). Resizing it
     would shift every icon, so it must keep its exact pixel dimensions.
 
-  * assets/ keeps the original PNGs because .NET Framework's System.Drawing
-    (used by desktop/build.ps1 to make app.ico) cannot decode WebP, and
+  * assets/ keeps the original PNGs because
     scripts/make-icons.py wants the full-resolution source for icons.
 
   * Only dist/ is packaged for the web (see scripts/pack-web.py), so the

@@ -31,8 +31,8 @@
   function newId() { return 'p_' + Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
   function errText(e) { return (e && (e.message || e.errMsg || e.error_description)) || '网络不太顺，稍后再试'; }
   function configured() {
-    // file:// 下浏览器不允许动态 import 模块（桌面版就是这么加载的），
-    // 桌面版本来就保持本地存储，直接当作未配置，别去报一个没意义的同步错误。
+    // file:// 下浏览器不允许动态 import 模块，
+    // 直接当作未配置，别去报一个没意义的同步错误。
     if (location.protocol === 'file:') return false;
     var id = conf().envId;
     return !!id && !/^(your|xxx|你的)/i.test(String(id));

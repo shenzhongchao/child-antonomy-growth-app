@@ -52,7 +52,3 @@ Windows 也可以使用 `py -m http.server 8080 -d dist`。
 ## 验证范围
 
 已检查 JavaScript 语法、四页渲染、素材引用、选择和完成反馈、重复加星保护，以及原数据字段和存储键的兼容性。未进行真实设备浏览器截图验收。
-
-## 桌面版（一键打开）
-
-`desktop/GrowthApp/` 目录是打包好的 Windows App：双击 `GrowthApp.exe` 无需浏览器即可使用。数据保存在本地用户目录 `~/.growth/data.json`（可直接备份），详见 `desktop/README.md`。重新打包执行 `powershell -ExecutionPolicy Bypass -File desktop\build.ps1`。

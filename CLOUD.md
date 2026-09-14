@@ -73,7 +73,7 @@ python scripts/pack-web.py      # 生成 release/today-i-control-pwa.zip
   | 云端比上次同步新 | 下载云端 |
   | 都有记录且判不出新旧 | **弹窗让家长选**，选「留本机」时会自动把云端那份另存为 `xxx_old` 档案 |
 - **存的数据结构**：`state` 字段原样沿用 `blank()` 的结构（`days/stars/counts/rewards/name/goal/graduated/prices`），
-  没有做任何字段改名或拆分，老记录直接可用，也不影响桌面版。
+  没有做任何字段改名或拆分，老记录直接可用。
 
 ## 四、多个孩子
 
