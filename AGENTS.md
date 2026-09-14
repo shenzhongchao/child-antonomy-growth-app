@@ -60,3 +60,14 @@
 - **换孩子前必须先 `push()` 成功**（`guardLocal()`）。上传失败要在弹窗里让家长选「再试一次 / 不等了直接继续 / 先不换了」，绝不静默用云端那份覆盖本机。`switchChild()` / `addChild()` 都走这条路径，新增类似动作时也要走。
 - 未配置 envId 时也能多孩子（纯本机档案），此时 `guardLocal()` 直接放行 —— 别让它去 `import()` 那个 785KB 的 SDK。
 - 云端 `profiles` 一行 = 一个孩子；`listProfiles()` 按 `user_id` 取，`switchChild` 切换的是 `meta.profileId`。
+
+## 事件账本（二期，**尚未接线**）
+
+- `scripts/growth-events.js` 是纯函数事件层（`blank/norm/apply/replay/toEvents`），**目前 `dist/` 里没有任何代码用它**，应用行为与接入前完全一致。别以为它已经在跑。
+- 动机：`profiles.state` 是**整包 last-write-wins**，两台设备各自写回「最终状态」时后端判不出谁对，只能后写赢 → 先写那侧丢数据。改成只追加「做了什么」就没有覆盖。
+- 云端表 `public.growth_events` 已建（`id` 主键去重 / `profile_id` / `type` / `day` / `t` / `payload jsonb`），**只授予 `SELECT, INSERT`，刻意不给 UPDATE/DELETE**。RLS 策略与 `profiles` 一样必须在控制台 SQL 编辑器里建（CLI 过不了身份校验）。SQL 全文见 `CLOUD.md` 附录。
+- 迁移方式：现有 `profiles.state` 用 `toEvents()` 压成**一条 `state.import` 事件**原样携带 → 逐字段无损。日常操作才产生细粒度事件。
+- `norm()` 会统一键顺序，否则「重放结果」与「原状态」JSON 比对会因键序不同而假失败 —— 加新字段时记得同步 `norm()`。
+- `scripts/verify.js` 的「事件账本」段（19 项）必须全绿；其中两条是防漂移的关键：
+  `blank()/blankDay()` 必须与 `app.js` 的 `blank()/today()` 逐字段一致；迁移必须无损。
+  改了 `app.js` 的任务数、默认计划或奖励价格表，这里会立刻炸出来。

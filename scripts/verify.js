@@ -9,7 +9,11 @@ const { execFileSync } = require('child_process');
 const ROOT = path.join(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
+const EVENTS = require(path.join(__dirname, 'growth-events.js'));
 const RealDate = Date;
+
+// archiveTests（跑在真正的全局作用域里）取回的 app.js 默认值，供 eventTests 比对
+let appBlankJson = null, appDayJson = null;
 
 let failures = 0;
 function assert(cond, msg) {
@@ -223,6 +227,9 @@ async function archiveTests() {
 
   vm.runInThisContext(fs.readFileSync(path.join(DIST, 'app.js'), 'utf8'), { filename: 'app.js' });
   vm.runInThisContext(fs.readFileSync(path.join(DIST, 'auth.js'), 'utf8'), { filename: 'auth.js' });
+  // 必须在改动 state 之前取：app.js 的 blank() 与 today() 的默认形态
+  appBlankJson = vm.runInThisContext('JSON.stringify(blank())');
+  appDayJson = vm.runInThisContext('JSON.stringify(today())');
   const tick = () => new Promise(r => process.nextTick(r));
   const state = () => JSON.parse(localStorage.getItem('self-growth-v1'));
 
@@ -257,6 +264,82 @@ async function archiveTests() {
   assert(typeof Cloud.guard === 'function' && typeof Cloud.openKidPicker === 'function', '切换保护与选人入口已注册');
 }
 
+// ---------- 事件账本：迁移无损 + reducer 语义 ----------
+function eventTests() {
+  console.log('\n== 桩测试：事件账本 ==');
+
+  // 1) 默认值不许与 app.js 漂移（app.js 改了计划/价格表而这里没跟，要立刻炸出来）
+  assert(JSON.stringify(EVENTS.blank()) === appBlankJson, 'blank() 与 app.js 的默认结构逐字段一致');
+  assert(JSON.stringify(EVENTS.blankDay()) === appDayJson, 'blankDay() 与 app.js 的 today() 默认逐字段一致');
+
+  // 2) 迁移等价性：任意复杂 state → 一条 import 事件 → 重放，必须逐字段相同
+  const messy = {
+    days: {
+      '2026-09-10': { selected: [2, 0], done: { 2: 'self', 0: 'help' }, plan: ['学习时间', '吃点心'], planned: true, mood: 3, note: '今天自己想起来两次' },
+      '2026-09-11': { selected: [], done: {}, plan: ['吃点心'], planned: false, mood: null, note: '' },
+      '2026-09-12': { selected: [5], done: { 5: 'self' }, mood: 0 },
+    },
+    stars: 37,
+    counts: [3, 1, 0, 2, 0, 5],
+    rewards: [{ id: 1, date: '2026-09-12', used: true }, { id: 0, date: '2026-09-12', used: false }],
+    name: '朵朵', goal: 5, graduated: [5, 0], prices: [6, 8, 12, 15, 12, 20],
+  };
+  const back = EVENTS.replay(EVENTS.toEvents(messy, { t: 1000, id: 'imp1' }));
+  assert(JSON.stringify(back) === JSON.stringify(EVENTS.norm(messy)), '迁移无损：state → 事件 → 重放 逐字段相同');
+  assert(back.stars === 37 && back.name === '朵朵' && back.goal === 5, '迁移后星星/昵称/目标不变');
+  assert(Object.keys(back.days).length === 3 && back.days['2026-09-10'].done['2'] === 'self', '迁移后每日记录完整');
+  assert(back.days['2026-09-12'].plan.length === 5 && back.days['2026-09-12'].note === '', '缺字段的旧日期被补全为默认值');
+
+  // 3) 细粒度事件语义（与 app.js 的 finish/pick/mood/confirmReward/graduate 对齐）
+  const base = EVENTS.blank(); base.stars = 10;
+  const ev = [
+    { id: 'e0', type: 'state.import', t: 0, payload: base },
+    { id: 'e1', type: 'settings.name', t: 1, value: '哥哥' },
+    { id: 'e2', type: 'settings.goal', t: 2, value: 3 },
+    { id: 'e3', type: 'pick', t: 3, day: '2026-09-14', selected: [0, 3] },
+    { id: 'e4', type: 'task.done', t: 4, day: '2026-09-14', task: 0, mode: 'self' },
+    { id: 'e5', type: 'task.done', t: 5, day: '2026-09-14', task: 3, mode: 'help' },
+    { id: 'e6', type: 'task.done', t: 6, day: '2026-09-14', task: 0, mode: 'self' },
+    { id: 'e7', type: 'mood', t: 7, day: '2026-09-14', mood: 1 },
+    { id: 'e8', type: 'note', t: 8, day: '2026-09-14', text: '今天自己整理书包了' },
+    { id: 'e9', type: 'reward.redeem', t: 9, day: '2026-09-14', reward: 0, cost: 5 },
+    { id: 'e10', type: 'reward.use', t: 10, seq: 0 },
+    { id: 'e11', type: 'skill.graduate', t: 11, task: 4, on: true },
+  ];
+  const st = EVENTS.replay(ev);
+  assert(st.name === '哥哥' && st.goal === 3, '设置类事件生效');
+  assert(st.stars === 6, '星星 = 10(基线) + 1(自主完成) − 5(兑换)');
+  assert(st.counts[0] === 1 && st.counts[3] === 0, '只有「自己想起来」才计入能力');
+  assert(Object.keys(st.days['2026-09-14'].done).length === 2 && st.days['2026-09-14'].done['0'] === 'self', '同一天同一任务的重复记录被忽略');
+  assert(st.days['2026-09-14'].selected.join() === '0,3' && st.days['2026-09-14'].mood === 1, '选挑战与心情生效');
+  assert(st.days['2026-09-14'].note === '今天自己整理书包了', '家长鼓励生效');
+  assert(st.rewards.length === 1 && st.rewards[0].used === true, '兑换与兑现生效');
+  assert(st.graduated.join() === '4', '毕业事件生效');
+
+  // 4) 幂等：整批重发（网络重试 / 换设备补传）不改变结果
+  const twice = EVENTS.replay(ev.concat(ev.map(e => Object.assign({}, e))));
+  assert(JSON.stringify(twice) === JSON.stringify(st), '同一批事件重发是幂等的');
+
+  // 5) 乱序到达也能收敛（replay 内部按 t 再按 id 排序）
+  const shuffled = ev.slice().sort(() => 0.5 - Math.random());
+  assert(JSON.stringify(EVENTS.replay(shuffled)) === JSON.stringify(st), '乱序到达后结果一致');
+
+  // 6) 未知事件忽略 —— 以后加新玩法时，老客户端不会崩
+  assert(JSON.stringify(EVENTS.replay(ev.concat([{ id: 'zz', type: 'future.thing', t: 99 }]))) === JSON.stringify(st), '未知事件被忽略');
+
+  // 7) 迁移基线之上继续追加（真实上线后的形态）
+  const after = EVENTS.replay(EVENTS.toEvents(messy, { t: 1000, id: 'imp1' }).concat([
+    { id: 'n1', type: 'task.done', t: 2000, day: '2026-09-14', task: 1, mode: 'self' },
+  ]));
+  assert(after.stars === 38 && after.counts[1] === 2, '迁移基线之上可以继续追加事件');
+
+  // 8) 两台设备各自追加，不会互相覆盖（这是当前整包覆盖方案丢数据的根因）
+  const A = [{ id: 'a1', type: 'task.done', t: 100, day: '2026-09-14', task: 0, mode: 'self' }];
+  const B = [{ id: 'b1', type: 'task.done', t: 200, day: '2026-09-14', task: 1, mode: 'self' }];
+  const merged = EVENTS.replay(A.concat(B));
+  assert(merged.counts[0] === 1 && merged.counts[1] === 1 && merged.stars === 2, '两台设备各自的改动都被保留（整包覆盖做不到）');
+}
+
 // ---------- 主流程 ----------
 (async () => {
   console.log('== 语法检查 ==');
@@ -269,6 +352,7 @@ async function archiveTests() {
 
   stubTests();
   await archiveTests();
+  eventTests();
 
   console.log('\n' + (failures ? `共 ${failures} 项失败` : 'ALL_PASS'));
   process.exit(failures ? 1 : 0);

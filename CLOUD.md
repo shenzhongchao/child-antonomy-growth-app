@@ -164,3 +164,64 @@ python scripts/pack-web.py      # 生成 release/today-i-control-pwa.zip
 | 登录成功但同步报错／读不到档案 | `profiles` 表或 RLS 策略没建好（见第一节第 4 步）；**开了 RLS 却没建策略 = 拒绝所有访问** |
 | 显示「同步有问题」 | 看后面的错误文案；多数是网络或权限问题 |
 | 部署后没生效 | `dist/sw.js` 的 `VERSION` 没加一，浏览器还在用旧缓存 |
+
+## 八、换孩子 / 记录安全 的排错
+
+| 现象 | 原因 |
+|---|---|
+| 切孩子时弹「本机记录还没备份上云」 | `push()` 没成功（断网或权限）。这是**故意的保护**：点了「不等了，直接继续」才会用云端那份覆盖本机 |
+| 面板里只看到「备份与恢复」，没有「方式一：自动同步」 | `dist/config.js` 的 `envId` 还是占位符，云端没开通 |
+| 手机上登录后看到的是别的孩子 | `profileId` 是本机各自记的。新设备首次登录若本机没有档案指针，会落到云端列表的第一份 → 去「👧 孩子档案」切到对的那个 |
+| 两台设备记录不一致 | 同步是**整包 last-write-wins**：两台都改时后写赢，先写的会丢。固定一台设备为主记录，换设备前先在旧设备点「立即同步」 |
+
+---
+
+## 附：事件账本（二期，**尚未接线**）
+
+> 现状：只建了表、写好了纯逻辑和测试，`dist/` 里**没有一行代码用它**，应用行为与之前完全一致。
+> 目的是替换掉上面那条容易被误解的「整包 last-write-wins」。
+
+**为什么**：两台设备各自把「最终状态」写回 `profiles.state`，后端无法判断谁对，只能后写赢 → 先写那一边改动丢失。
+改成只记「做了什么」（只增不改），后端只追加、不覆盖，就没有「覆盖」这回事。
+
+### 表（已建好）
+
+```sql
+CREATE TABLE IF NOT EXISTS public.growth_events (
+  id text PRIMARY KEY,          -- 操作 id：跨设备唯一，主键去重保证重发只算一次
+  user_id text NOT NULL,
+  profile_id text NOT NULL,     -- 哪个孩子
+  type text NOT NULL,           -- task.done / pick / plan / mood / note / reward.redeem / ...
+  day text,                     -- 'YYYY-MM-DD'，设置类事件为空
+  t bigint NOT NULL,            -- 客户端毫秒时间戳，重放排序用
+  payload jsonb,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+CREATE INDEX IF NOT EXISTS growth_events_profile_idx ON public.growth_events (profile_id, t);
+GRANT SELECT, INSERT ON public.growth_events TO authenticated;   -- 刻意不给 UPDATE/DELETE
+GRANT ALL ON public.growth_events TO service_role;
+ALTER TABLE public.growth_events ENABLE ROW LEVEL SECURITY;
+```
+
+**RLS 策略（必须在控制台 SQL 编辑器里跑，CLI 身份校验过不去）**：
+
+```sql
+CREATE POLICY growth_events_read ON public.growth_events FOR SELECT TO authenticated
+  USING (auth.uid() = user_id);
+CREATE POLICY growth_events_append ON public.growth_events FOR INSERT TO authenticated
+  WITH CHECK (auth.uid() = user_id);
+```
+
+### 逻辑（`scripts/growth-events.js`）
+
+纯函数，无副作用，Node 与浏览器都能用：`blank() / blankDay() / norm() / apply() / replay() / toEvents()`。
+
+- **迁移**：现有 `profiles.state` 用 `toEvents()` 压成**一条 `state.import` 事件**（原样携带），保证逐字段无损。
+- **日常**：每次操作产生一条细粒度事件，本机立刻重放（孩子看到即时反馈），后台补传。
+- **重放**：按 `(t, id)` 排序，按 `id` 去重，`state.import` 出现的位置即基线；未知 `type` 忽略（向前兼容）。
+- 产出的 state 与 `blank()` **完全同构**，所以切换时 `app.js` 一行都不用改。
+
+已验证（`node scripts/verify.js` 的「事件账本」段，共 19 项）：
+迁移无损逐字段相同、`blank()`/`blankDay()` 与 `app.js` 默认值不许漂移、
+批量重发幂等、乱序到达收敛、未知事件忽略、**两台设备各自追加互不覆盖**。
+
