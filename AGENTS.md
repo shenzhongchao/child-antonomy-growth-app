@@ -41,8 +41,12 @@
 
 - Web 应用的云端能力在 `dist/auth.js`（账号/同步）+ `dist/config.js`（只填 envId）里，`app.js` 里只有一处钩子：`save()` 末尾调用 `Cloud.markDirty()`。**不要**把登录或云存储逻辑塞进 `app.js`。
 - 原则：本地优先、永不打扰。`localStorage` 的 `self-growth-v1` 是孩子正在用的数据，云端只是备份；未配置 envId / 未登录 / 断网 / 报错时一律静默降级，不弹错打断孩子。
-- 同步粒度是**整包**：云端 `profiles` 集合里每条文档 = 一个孩子档案，`state` 字段原样存 `blank()` 的结构，不改名不拆分。冲突走 last-write-wins，判不出新旧时弹窗让家长选（选「留本机」会把云端那份另存为 `xxx_old`）。
-- `dist/cloudbase.esm.js` 是**内置的** CloudBase JS SDK v3.9.3（595KB，由 jsdelivr `+esm` 打包，自带依赖、无外部引用）。不要手改；升级时重新下载 `https://cdn.jsdelivr.net/npm/@cloudbase/js-sdk@<版本>/+esm` 覆盖即可。它只在真正用到云端时才被动态 `import()` 加载，不进首屏。
+- 同步粒度是**整包**：云端 **PostgreSQL** `profiles` 表里每一行 = 一个孩子档案，`state` 字段（jsonb）原样存 `blank()` 的结构，不改名不拆分。冲突走 last-write-wins，判不出新旧时弹窗让家长选（选「留本机」会把云端那份另存为 `xxx_old`）。
+- **本环境是 PG 模式，文档型数据库实测不可用**（`tcb db nosql execute` 取不到 Mongo 连接器，控制台无「新建集合」入口）—— 别再照官方文档想当然。`auth.js` 的数据层用 `app.rdb().from('profiles')`（PostgREST 风格，返回 `{data, error}`），字段映射集中在 `rowOf()` / `writeProfile()` 里：表列 `id/user_id/name/phone/state/updated_at` ↔ 上层沿用的 `_id/userId/.../updatedAt`。改数据层不要动上层命名。
+- `dist/cloudbase.esm.js` 是**内置的、真正自包含的** CloudBase JS SDK v3.9.3（785KB，用 esbuild 把 `@cloudbase/js-sdk` 连同依赖一起 bundle 成单文件 ESM，`export default`）。不要手改。
+  ⚠️ **不要**再用 jsdelivr 的 `+esm` 产物覆盖它：那个文件开头有 8 条 `import * as X from "/npm/<pkg>@<ver>/+esm"` 的**根相对路径**，只有在 `cdn.jsdelivr.net` 域名下才解析得通，放到自有域名或 localhost 上必然 404（2026-09-14 踩过这个坑，此前的「自带依赖、无外部引用」说法是错的）。
+  重新生成：临时目录 `npm i @cloudbase/js-sdk@<版本> esbuild`，入口文件写 `import cb from '@cloudbase/js-sdk'; export default cb;`，再 `esbuild --bundle --format=esm --minify --target=es2019`。生成后用 `grep -c '/npm/'` 确认结果为 0。
+  它只在真正用到云端时才被动态 `import()` 加载（URL 带 `?v=` 防止 Service Worker 缓存旧版），不进首屏。
 - 它是平铺在 `dist/` 根目录的，因为 `scripts/pack-web.py` **只收顶层文件且禁止嵌套目录**（EdgeOne 要求 index.html 在压缩包最外层）。别把它挪进子目录，否则打不进 ZIP。
 - 家长面板 →「☁️ 云端账号」是唯一入口，孩子不登录。
 - 登录 API 用的是 `auth.getVerification({phone_number})` + `auth.signInWithSms({verificationInfo, verificationCode, phoneNum})`（手机号要带 `+86 ` 前缀）。控制台开通步骤、数据库安全规则见 `CLOUD.md`。

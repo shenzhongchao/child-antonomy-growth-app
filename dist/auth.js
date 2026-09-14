@@ -60,7 +60,7 @@
 
   function sdk() {
     if (_sdk) return _sdk;
-    var url = new URL('cloudbase.esm.js', location.href).href;
+    var url = new URL('cloudbase.esm.js?v=11', location.href).href;
     _sdk = import(url).then(function (m) { return m.default || m.cloudbase || m; });
     return _sdk;
   }
@@ -70,12 +70,12 @@
     return sdk().then(function (cb) {
       _app = cb.init({ env: conf().envId });
       _auth = _app.auth({ persistence: 'local' });
-      _db = _app.database();
+      _db = _app.rdb();
       return _app;
     });
   }
 
-  function coll() { return _db.collection(conf().profiles || 'profiles'); }
+  function tbl() { return _db.from(conf().profiles || 'profiles'); }
 
   function currentUid() {
     return ensure()
@@ -87,19 +87,34 @@
       .catch(function () { return null; });
   }
 
-  function docOf(res) {
-    var d = res && res.data;
-    if (Array.isArray(d)) return d[0] || null;
-    return d || null;
+  // 数据库行 -> 应用内字段。上层（firstSync / profileList / switchChild 等）沿用
+  // _id / userId / updatedAt 这套命名，这里做一次映射，避免改动上层逻辑。
+  function rowOf(row) {
+    if (!row) return null;
+    return {
+      _id: row.id,
+      userId: row.user_id,
+      name: row.name,
+      phone: row.phone,
+      state: row.state,
+      updatedAt: row.updated_at,
+    };
+  }
+
+  function rowsOf(res) {
+    if (res && res.error) throw res.error;
+    return (res && res.data) || [];
   }
 
   function loadProfile(id) {
-    return coll().doc(id).get().then(docOf).catch(function () { return null; });
+    return tbl().select('*').eq('id', id).limit(1)
+      .then(function (res) { return rowOf(rowsOf(res)[0]); })
+      .catch(function () { return null; });
   }
 
   function listProfiles(uid) {
-    return coll().where({ userId: uid }).limit(20).get()
-      .then(function (res) { return (res && res.data) || []; })
+    return tbl().select('*').eq('user_id', uid).limit(20)
+      .then(function (res) { return rowsOf(res).map(rowOf); })
       .catch(function () { return []; });
   }
 
@@ -107,7 +122,17 @@
     data.updatedAt = Date.now();
     // 冗余存一份手机号：二期小程序按手机号登录时，用它把两端的记录并到同一个孩子档案下
     data.phone = data.phone || meta.phone || '';
-    return coll().doc(id).set(data).then(function () { return data; });
+    return tbl().upsert({
+      id: id,
+      user_id: data.userId,
+      name: data.name || '小小探险家',
+      phone: data.phone,
+      state: data.state,
+      updated_at: data.updatedAt,
+    }).then(function (res) {
+      if (res && res.error) throw res.error;
+      return data;
+    });
   }
 
   /* ---------- 读写本地状态 ---------- */

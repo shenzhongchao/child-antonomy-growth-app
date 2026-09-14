@@ -5,7 +5,7 @@
 //
 // 完整开通步骤见仓库根目录的 CLOUD.md。
 window.GROWTH_CLOUD = {
-  envId: 'YOUR-ENV-ID',
+  envId: 'itonghao-d5gv3zqpl9f36e109',
 
   // 云数据库里存孩子档案的集合名。改了这里，控制台也要建同名集合。
   profiles: 'profiles',

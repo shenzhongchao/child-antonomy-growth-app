@@ -23,8 +23,11 @@
    短信签名要审核（1~2 天），签名内容建议填你的小程序名或应用名。
 
 3. **加 Web 安全域名**
-   环境 → **安全配置** → 添加**你实际访问用的那个域名**，例如 `today.你的域名.com`
-   （本地调试再加一个 `localhost:8080`）。不加的话浏览器请求会被直接拒绝，表现为点登录没反应。
+   控制台 → **环境配置 → 安全来源**（旧版界面叫「安全配置」）→ 在「安全域名」区域点 **【添加域名】** →
+   填**你实际访问用的那个域名**，例如 `today.itonghao.cn`（本地调试再加一条 `localhost:8080`）。
+   支持端口号（`localhost:8080`）和通配符（`*.example.com`），每个环境上限 50 条，**约 1~2 分钟生效**。
+   系统默认已给 `localhost`、`xxx.tcloudbaseapp.com` 等；带端口的地址建议显式加一条。
+   不加的话浏览器请求会被直接拒绝，表现为点登录没反应。
 
    > ⚠️ 这里填的是「用户浏览器地址栏里的域名」，不是平台分配的默认域名。
    > 按 [DEPLOY.md](DEPLOY.md) 绑定自定义域名后，**必须回来把你自己的域名加上**，
@@ -34,9 +37,52 @@
    > 但默认域名仅供测试（有访问提示中间页、访问频率限制，可能被风控封禁），
    > **别把它当长期入口**。
 
-4. **建数据库集合**
-   环境 → **数据库** → 新建集合 `profiles`（改名字的话同步改 `dist/config.js`）。
-   权限先选 **「仅创建者可读写」**，索引给 `userId` 建一个（非唯一）。
+4. **建 PostgreSQL 表 `profiles`**（本项目只走 PostgreSQL）
+
+   > ⚠️ 文档型数据库在 PG 模式环境下**实测不可用**：`tcb db nosql execute` 取不到 Mongo 连接器
+   > （`getMongoConnector` 返回 null），控制台也没有「新建集合」入口。早先依据官方文档写下的
+   > 「PG 模式下文档库仍默认初始化、代码不用改」**与实环境不符，已废弃**。
+
+   环境 → **数据库 → PostgreSQL** → SQL 编辑器，执行：
+
+   ```sql
+   CREATE SCHEMA IF NOT EXISTS public;
+
+   CREATE TABLE IF NOT EXISTS public.profiles (
+     id         text PRIMARY KEY,
+     user_id    text NOT NULL,
+     name       text,
+     phone      text,
+     state      jsonb,
+     updated_at bigint,
+     created_at timestamptz NOT NULL DEFAULT now()
+   );
+
+   CREATE INDEX IF NOT EXISTS profiles_user_id_idx ON public.profiles (user_id);
+
+   GRANT USAGE ON SCHEMA public TO anon, authenticated, service_role;
+   GRANT SELECT, INSERT, UPDATE, DELETE ON public.profiles TO authenticated;
+   GRANT ALL ON public.profiles TO service_role;
+
+   ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
+
+   CREATE POLICY profiles_own ON public.profiles
+     FOR ALL TO authenticated
+     USING (auth.uid() = user_id)
+     WITH CHECK (auth.uid() = user_id);
+   ```
+
+   要点：
+   - `state` 是 jsonb，**原样**存 `blank()` 的结构，不做字段拆分
+   - **`user_id` 必须是 `text`，不能用 `uuid`** —— CloudBase 的 uid 是 `2099425768869199872`
+     这种 19 位数字串，不是 UUID；建成 uuid 会报 `invalid input syntax for type uuid`
+   - `auth.uid()` 的返回类型就是 **text**，所以 RLS 里 `auth.uid() = user_id` 两边类型天然一致
+   - `updated_at` 用**毫秒时间戳（bigint）**，与前端 `Date.now()` 对齐
+   - **RLS 策略必须建**：开了 RLS 却不建策略 = 拒绝所有访问。前端请求会带用户身份，靠 `auth.uid()` 匹配
+   - 改表名的话，同步改 `dist/config.js` 里的 `profiles`
+   - CLI 能执行建表／授权／开 RLS，但 **`CREATE POLICY` 会被 CLI 的身份校验拦下**
+     （报 `No valid identity information, please use cloudbase login to login`）——
+     **这一条必须到控制台 SQL 编辑器里跑**
 
 ## 二、改一行代码
 
@@ -108,6 +154,7 @@ python scripts/pack-web.py      # 生成 release/today-i-control-pwa.zip
 | 现象 | 原因 |
 |---|---|
 | 面板显示「未配置云端」 | `dist/config.js` 里还是 `YOUR-ENV-ID` |
-| 点获取验证码没反应/报错 | 安全域名没加，或短信签名还没审核通过 |
+| 点获取验证码没反应/报错 | 安全域名没加，或「身份认证 → 登录方式」里短信验证码登录没开启 |
+| 登录成功但同步报错／读不到档案 | `profiles` 表或 RLS 策略没建好（见第一节第 4 步）；**开了 RLS 却没建策略 = 拒绝所有访问** |
 | 显示「同步有问题」 | 看后面的错误文案；多数是网络或权限问题 |
 | 部署后没生效 | `dist/sw.js` 的 `VERSION` 没加一，浏览器还在用旧缓存 |
