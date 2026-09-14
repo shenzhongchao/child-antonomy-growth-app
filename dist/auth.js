@@ -76,7 +76,7 @@
 
   function sdk() {
     if (_sdk) return _sdk;
-    var url = new URL('cloudbase.esm.js?v=12', location.href).href;
+    var url = new URL('cloudbase.esm.js?v=13', location.href).href;
     _sdk = import(url).then(function (m) { return m.default || m.cloudbase || m; });
     return _sdk;
   }
@@ -437,7 +437,7 @@
     if (!el) return;
     var h = '<p class="sub">' + esc(statusText()) + '</p>';
     if (_status === 'off') {
-      h += '<p class="sub">云端暂未开通，记录目前只保存在本机，可用「备份与恢复」导出存档。</p>';
+      h += '<p class="sub">云端暂未开通，记录只保存在本机。</p>';
     } else if (_status === 'login' || (_status === 'error' && !meta.profileId)) {
       h += '<label>家长手机号<input id="clPhone" inputmode="numeric" maxlength="11" autocomplete="tel" placeholder="13800138000"></label>' +
         '<label>短信验证码<input id="clCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位数字"></label>' +

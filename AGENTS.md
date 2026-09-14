@@ -35,7 +35,7 @@
 - 家长面板 PIN 码为 1234——仅用于防误触，并非安全机制。需保留此行为。
 - 回归验证：`node scripts/verify.js`（语法检查 + 桩测试，含 `auth.js` 的多孩子档案用例）。改完 `dist/` 后必须跑一遍，全绿再提交。手动验证仍可运行服务器，检查四个页面 + 家长面板，并确认完成任务时会加分（重复完成会被阻止）。
 - 改过 `dist/` 里任何 HTML/CSS/JS 后，务必把 `dist/sw.js` 顶部的 `VERSION` 加一，否则老用户浏览器的 Service Worker 缓存不会刷新。
-- 线上域名与 `localhost` 是互不相通的存储源；网页端数据只存在浏览器本地，家长面板的「备份与恢复」是唯一的迁移手段（已登录云端账号时除外，见下）。
+- 线上域名与 `localhost` 是互不相通的存储源；网页端数据只存在浏览器本地，家长面板的「🛡️ 记录安全」（云端自动同步 / 手动存文件）是唯一的迁移手段。
 
 ## 云端账号与同步（CloudBase）
 
@@ -48,7 +48,8 @@
   重新生成：临时目录 `npm i @cloudbase/js-sdk@<版本> esbuild`，入口文件写 `import cb from '@cloudbase/js-sdk'; export default cb;`，再 `esbuild --bundle --format=esm --minify --target=es2019`。生成后用 `grep -c '/npm/'` 确认结果为 0。
   它只在真正用到云端时才被动态 `import()` 加载（URL 带 `?v=` 防止 Service Worker 缓存旧版），不进首屏。
 - 它是平铺在 `dist/` 根目录的，因为 `scripts/pack-web.py` **只收顶层文件且禁止嵌套目录**（EdgeOne 要求 index.html 在压缩包最外层）。别把它挪进子目录，否则打不进 ZIP。
-- 家长面板 →「👧 孩子档案」是档案的唯一入口（改名 / 列表 / 切换 / 添加），不依赖登录；「☁️ 云端备份」只管登录与同步状态。孩子不登录。
+- 家长面板 →「👧 孩子档案」是档案的唯一入口（改名 / 列表 / 切换 / 添加），不依赖登录；「🛡️ 记录安全 → 方式一：自动同步到云端」只管登录与同步状态。孩子不登录。
+- 家长面板里**只有一块讲备份**：「🛡️ 记录安全」，内部并列「方式一 自动同步到云端（加载中即 `Cloud.mount('cloudBox')`）」与「方式二 手动存一份文件（`backupData()` / `restoreData()`）」。**不要再把云同步和文件备份拆成两个都叫「备份」的折叠块** —— 那是 2026-09-14 之前的结构，家长分不清哪个是自动的、哪个要自己动手。未配置 envId 时只留方式二，标题退回「🛡️ 备份与恢复」。
 - 登录 API 用的是 `auth.getVerification({phone_number})` + `auth.signInWithSms({verificationInfo, verificationCode, phoneNum})`（手机号要带 `+86 ` 前缀）。控制台开通步骤、数据库安全规则见 `CLOUD.md`。
 - `cloud/phone-login/` 是**二期**小程序手机号登录的云函数脚手架，尚未联调。上小程序时要解决两端 uid 对齐问题（Web 短信登录 uid ≠ 自定义登录 uid），方案见 `CLOUD.md` 第五节。
 
