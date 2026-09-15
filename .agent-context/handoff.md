@@ -1,43 +1,42 @@
 # Agent Handoff
 
 ## Task
-上线前安全加固收尾（承接 ChatGPT 已完成的 `security/hardening-v1` 核心实现）：推进缓存版本、奖励日期 defense-in-depth escape、主回归接入安全测试、文档与验证。
+上线前安全加固：修复恶意备份存储型 XSS 风险；增加客户端事件白名单/边界校验；在 PostgreSQL 层增加服务端事件校验并限制 `state.import` 只能作为首条初始化基线；补安全回归与生产安全文档。
 
 ## Current status
-- Status: ready_for_review
-- Last agent: opencode (GLM)
-- Branch: `security/hardening-v1`（已 commit + push，未 merge PR #2）
+- Status: done
+- Last agent: ChatGPT
+- Branch: `main`
+- PR: #2（已 squash merge）
+- Merge commit: `635f30fd7ffba4dea66ee1e4f2532bdef0986e7b`
 
-## 本轮完成
-- [x] `dist/index.html`：7 个核心资源 `?v=16` → `?v=17`
-- [x] `dist/auth.js`：`cloudbase.esm.js?v=16` → `?v=17`（verify.js 要求与 APP_ASSET_V 一致，必须同步）
-- [x] `dist/sw.js`：`growth-v15` → `growth-v16`（其余 SW 逻辑未动）
-- [x] `dist/app.js`：奖励券历史日期渲染 `${r.date}` → `${esc(r.date)}`（仅此一处，未做其他重构）
-- [x] `scripts/verify.js`：`APP_ASSET_V=17`、`SW_CACHE_V='growth-v16'`；在 `== 快速回归 ==` 后新增 `== 安全回归 ==` 段，通过 `execFileSync` 执行 `scripts/verify-security.js`，失败计入 failures
-- [x] `AGENTS.md`：回归命令补充 `node scripts/verify-security.js`；新空库用 `cloud/schema-v3.sql`、已有库用 `cloud/migrations/2026-09-15-security-hardening.sql`；注明两个 schema 会 DROP 表、已有数据只能跑 migrations
+## Delivered
+- `dist/growth-events.js`：严格清洗备份/状态输入；新增 `validEvent()`，非法日期、越界 task/reward、非法 mood、超长文本、非法价格与伪造事件不会进入状态或重放结果。
+- `dist/app.js`：奖励日期渲染增加 `esc()`，形成 defense-in-depth。
+- `cloud/migrations/2026-09-15-security-hardening.sql`：已有数据库的非破坏性安全迁移，增加事件类型/字段/大小校验、profile 级 advisory lock，并限制 `state.import` 只能作为首条事件。
+- `cloud/schema-v3.sql`：全新空环境安全 bootstrap（RLS + trigger）；仅限空库，禁止用于已有数据环境。
+- `scripts/verify-security.js`：安全回归已接入主 `scripts/verify.js`。
+- `SECURITY.md`：记录生产安全边界与控制台检查事项。
+- PWA 资源版本：`?v=17`；Service Worker Cache Storage：`growth-v16`。
 
-## 测试结果（全部通过）
-- `node scripts/verify-security.js` → **SECURITY_ALL_PASS**（15项：恶意 reward.date 丢弃、非法日期/任务、done/mood 白名单、字符串/数值边界、伪造事件 replay 忽略、DB 迁移关键约束）
-- `node scripts/verify-history.js` → **ALL_PASS**（10项）
-- `node scripts/verify.js` → **ALL_PASS**（含 growth-events/app/auth/config/sw 语法检查、备份恢复/徽章/大满贯/夜间/飞星/合并桩测试、成长足迹回归、**安全回归（SECURITY_ALL_PASS 内嵌）**、V2 本地账本、云同步 4 场景、SW 缓存、事件账本）
-- 6 个 dist 文件 `node --check` 全部通过
+## Validation
+- `node --check`（growth-events/app/auth/history/sw/config）：PASS
+- `node scripts/verify-security.js`：`SECURITY_ALL_PASS`（15 项）
+- `node scripts/verify-history.js`：`ALL_PASS`（10 项）
+- `node scripts/verify.js`：`ALL_PASS`
+- 恶意备份 smoke：`SMOKE_MALICIOUS_PASS`，无 alert、恶意 reward 不进入状态、页面正常
+- 用户已在真实 CloudBase 数据库执行 `cloud/migrations/2026-09-15-security-hardening.sql`
+- 用户已完成真实手机号登录 + 正常同步 smoke test，迁移后事件可正常上传并同步
 
-## 恶意备份测试结果
-Node 桩环境（同 verify.js harness）恢复恶意备份 JSON（reward.date = `<img src=x onerror=alert(1)>`）：
-- **SMOKE_MALICIOUS_PASS**：未触发 alert；恶意 reward 记录不进入状态（`GrowthEvents.norm` 丢弃）；其余合法字段正常保留；奖励屋渲染日期已转义
+## Production security boundaries
+- `1234` PIN 仅防误触，不是认证密码。
+- `envId` 可公开；前端禁止出现 SecretId / SecretKey / service_role / 数据库密码。
+- 浏览器是不可信环境；账号隔离依赖 Auth + RLS，事件完整性依赖 client validation + DB trigger。
+- 已有数据环境只能跑 `cloud/migrations/*`；`schema-v2.sql` / `schema-v3.sql` 都会 DROP 表，只能用于全新空环境。
+- 生产控制台仍应持续保持：精确安全来源、短信限频、HTTPS；具体见 `SECURITY.md`。
 
-## 浏览器 smoke test 结果说明
-- 本地环境无浏览器自动化工具，交互式 UI 冒烟（导出/恢复/奖励屋/足迹/任务/兑换/家长设置/刷新）通过以下两层覆盖：
-  1. verify.js 的桩测试（家长面板备份导出/恢复、restore 非法输入不动数据、完成任务加分、兑换余额、家长设置写入、localStorage 持久化）均 PASS；
-  2. `python -m http.server 8080 -d dist` 启动正常，index.html / app.js 均返回 200。
-- 上线合入前建议真机再点一遍关键路径（尤其奖励券日期为转义文本）。
-
-## 未完成 / 后续
-- CloudBase 控制台手动步骤（本地无法执行）：已有数据库执行 `cloud/migrations/2026-09-15-security-hardening.sql`；全新空库才可用 `cloud/schema-v3.sql`，不要两个都跑。
-- 生产控制台 checklist（安全来源、短信限频、HTTPS）见 SECURITY.md，仍未动。
-- PR #2 未 merge，等待 review。
-
-## Product/security boundaries
-- `1234` PIN 仅防误触，不是认证密码
-- `envId` 可公开；前端禁止 SecretId/SecretKey/service_role/数据库密码
-- 浏览器不可信；账号隔离依赖 Auth + RLS，事件完整性依赖 client validation + DB trigger
+## Version discipline
+后续只要修改 `dist/` 中任何 HTML/CSS/JS：
+- 资源 query 必须从 `?v=17` 继续递增，绝不复用历史版本号；
+- `dist/sw.js` 的 `VERSION` 必须从 `growth-v16` 继续递增；
+- 同步更新 `scripts/verify.js` 中版本断言。
