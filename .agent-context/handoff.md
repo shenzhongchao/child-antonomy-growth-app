@@ -1,42 +1,38 @@
 # Agent Handoff
 
 ## Task
-上线前安全加固：修复恶意备份存储型 XSS 风险；增加客户端事件白名单/边界校验；在 PostgreSQL 层增加服务端事件校验并限制 `state.import` 只能作为首条初始化基线；补安全回归与生产安全文档。
+优化家长区云端同步 UX：验证码发送成功后提供面板内可见反馈和重发倒计时；将用户可见的“记录保护 / 自动保护 / 保护记录”统一改成常见的“云端同步 / 自动同步 / 已同步到云端”表达，不修改同步架构。
 
 ## Current status
-- Status: done
+- Status: in_progress
 - Last agent: ChatGPT
-- Branch: `main`
-- PR: #2（已 squash merge）
-- Merge commit: `635f30fd7ffba4dea66ee1e4f2532bdef0986e7b`
+- Branch: `ux/cloud-sync-feedback`
+- Base: `main@9408dd14c954f4845d49e453093d7f607a4ed2ee`
 
-## Delivered
-- `dist/growth-events.js`：严格清洗备份/状态输入；新增 `validEvent()`，非法日期、越界 task/reward、非法 mood、超长文本、非法价格与伪造事件不会进入状态或重放结果。
-- `dist/app.js`：奖励日期渲染增加 `esc()`，形成 defense-in-depth。
-- `cloud/migrations/2026-09-15-security-hardening.sql`：已有数据库的非破坏性安全迁移，增加事件类型/字段/大小校验、profile 级 advisory lock，并限制 `state.import` 只能作为首条事件。
-- `cloud/schema-v3.sql`：全新空环境安全 bootstrap（RLS + trigger）；仅限空库，禁止用于已有数据环境。
-- `scripts/verify-security.js`：安全回归已接入主 `scripts/verify.js`。
-- `SECURITY.md`：记录生产安全边界与控制台检查事项。
-- PWA 资源版本：`?v=17`；Service Worker Cache Storage：`growth-v16`。
+## Product decisions
+- 家长区 section 标题：`☁️ 云端同步`
+- 未登录说明：绑定家长手机号后，记录自动同步到云端；同手机号可在其他设备恢复；孩子不用登录。
+- 状态文案使用：尚未开启云端同步 / 正在同步到云端 / 已同步到云端 / 等待同步。
+- 登录按钮：`开启云端同步`
+- 验证码成功后必须在当前面板内显示确认信息，不能只依赖 toast。
+- 验证码按钮：发送中 → 已发送并显示 60 秒重发倒计时；成功文案显示脱敏手机号。
+- 保持 local-first、后台自动同步、一个家长账号一个孩子、无“立即同步”按钮。
 
-## Validation
-- `node --check`（growth-events/app/auth/history/sw/config）：PASS
-- `node scripts/verify-security.js`：`SECURITY_ALL_PASS`（15 项）
-- `node scripts/verify-history.js`：`ALL_PASS`（10 项）
-- `node scripts/verify.js`：`ALL_PASS`
-- 恶意备份 smoke：`SMOKE_MALICIOUS_PASS`，无 alert、恶意 reward 不进入状态、页面正常
-- 用户已在真实 CloudBase 数据库执行 `cloud/migrations/2026-09-15-security-hardening.sql`
-- 用户已完成真实手机号登录 + 正常同步 smoke test，迁移后事件可正常上传并同步
+## Required changes
+- `dist/auth.js`：验证码可见反馈 + 倒计时 + 云端同步文案统一。
+- `dist/app.js`：家长面板 summary、文件恢复提示、使用说明中的“记录保护”统一为“云端同步”。
+- 因修改 dist：资源 query `?v=17 → ?v=18`；SW `growth-v16 → growth-v17`；同步更新 `scripts/verify.js`。
+- 补回归：验证发送验证码后面板显示反馈/倒计时，且用户可见文案不再出现“记录保护/自动保护/保护记录”。
 
-## Production security boundaries
-- `1234` PIN 仅防误触，不是认证密码。
-- `envId` 可公开；前端禁止出现 SecretId / SecretKey / service_role / 数据库密码。
-- 浏览器是不可信环境；账号隔离依赖 Auth + RLS，事件完整性依赖 client validation + DB trigger。
-- 已有数据环境只能跑 `cloud/migrations/*`；`schema-v2.sql` / `schema-v3.sql` 都会 DROP 表，只能用于全新空环境。
-- 生产控制台仍应持续保持：精确安全来源、短信限频、HTTPS；具体见 `SECURITY.md`。
+## Validation required
+- `node --check`：app/auth/history/growth-events/sw/config
+- `node scripts/verify-security.js`
+- `node scripts/verify-history.js`
+- `node scripts/verify.js`
+- 浏览器 smoke：家长区、验证码发送反馈、倒计时、登录、正常同步状态。
 
 ## Version discipline
-后续只要修改 `dist/` 中任何 HTML/CSS/JS：
-- 资源 query 必须从 `?v=17` 继续递增，绝不复用历史版本号；
-- `dist/sw.js` 的 `VERSION` 必须从 `growth-v16` 继续递增；
-- 同步更新 `scripts/verify.js` 中版本断言。
+本任务修改 dist，完成时必须为：
+- `?v=18`
+- `growth-v17`
+- `scripts/verify.js` 对应断言同步更新
