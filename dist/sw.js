@@ -1,6 +1,9 @@
 // 离线缓存：让「今天我做主」装到手机桌面后没网也能打开。
 // 改完 dist 里的 HTML/CSS/JS 后，把下面 VERSION 加一，用户下次联网打开就会拿到新版。
-const VERSION = 'growth-v12';
+const VERSION = 'growth-v13';
+
+// 核心预缓存文件：index.html 里带 ?v=xx 引用它们，fetch 时需要忽略 query 才能命中缓存。
+const CORE_FILES = ['index.html', 'styles.css', 'growth-events.js', 'app.js', 'config.js', 'auth.js'];
 
 // 页面导航等网络的上限：超过这个时间就用本地缓存顶上，避免弱网/断网时白屏干等。
 const NAV_TIMEOUT_MS = 2500;
@@ -74,16 +77,23 @@ self.addEventListener('fetch', (event) => {
   }
 
   // 静态资源：先看缓存，没有再走网络并顺手存下来。
-  event.respondWith(
-    caches.match(req).then((hit) => {
-      if (hit) return hit;
-      return fetch(req).then((res) => {
-        if (res && res.status === 200 && res.type === 'basic') {
-          const copy = res.clone();
-          caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
-        }
-        return res;
-      });
-    })
-  );
+  event.respondWith(serveStatic(req));
 });
+
+async function serveStatic(req) {
+  const cache = await caches.open(VERSION);
+  const hit = await cache.match(req);
+  if (hit) return hit;
+  let name = '';
+  try { name = new URL(req.url).pathname.split('/').pop() || ''; } catch (err) { name = ''; }
+  if (CORE_FILES.indexOf(name) !== -1) {
+    const near = await cache.match(req, { ignoreSearch: true });
+    if (near) return near;
+  }
+  const res = await fetch(req);
+  if (res && res.status === 200 && res.type === 'basic') {
+    const copy = res.clone();
+    caches.open(VERSION).then((c) => c.put(req, copy)).catch(() => {});
+  }
+  return res;
+}

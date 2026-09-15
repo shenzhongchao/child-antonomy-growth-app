@@ -30,7 +30,12 @@
 
   function sdk() {
     if (_sdk) return _sdk;
-    var url = new URL('cloudbase.esm.js?v=14', location.href).href;
+    var testApp = (typeof window.__growthTestApp === 'function' && window.__growthTestApp()) || null;
+    if (testApp) {
+      _app = testApp; _auth = testApp.auth ? testApp.auth() : null; _db = testApp.rdb();
+      return Promise.resolve(_app);
+    }
+    var url = new URL('cloudbase.esm.js?v=13', location.href).href;
     _sdk = import(url).then(function (m) { return m.default || m.cloudbase || m; });
     return _sdk;
   }
@@ -93,10 +98,12 @@
       type: e.type, day: e.day || null, t: Number(e.t) || Date.now(), payload: payload,
     };
   }
-  function listEvents(profileId) {
+  function listEvents(profileId, afterSeq) {
     var all = [], size = 1000;
     function page(from) {
-      return events().select('*').eq('profile_id', profileId).range(from, from + size - 1).then(rowsOf)
+      var q = events().select('*').eq('profile_id', profileId);
+      if (afterSeq > 0) q = q.gt('server_seq', afterSeq);
+      return q.order('server_seq', { ascending: true }).range(from, from + size - 1).then(rowsOf)
         .then(function (rows) {
           all = all.concat(rows);
           return rows.length === size ? page(from + size) : all;
@@ -106,11 +113,8 @@
       return rows.map(eventFromRow).sort(function (a, b) { return (a.order - b.order) || String(a.id).localeCompare(String(b.id)); });
     });
   }
-  function uploadMissing(remote, pending, uid, profileId) {
-    var known = {};
-    remote.forEach(function (e) { known[e.id] = true; });
-    var rows = pending.filter(function (e) { return !known[e.id]; })
-      .map(function (e) { return eventToRow(e, uid, profileId); });
+  function uploadMissing(pending, uid, profileId) {
+    var rows = (pending || []).map(function (e) { return eventToRow(e, uid, profileId); });
     if (!rows.length) return Promise.resolve();
     return events().upsert(rows, { onConflict: 'id', ignoreDuplicates: true })
       .then(function (res) { if (res && res.error) throw res.error; });
@@ -119,16 +123,24 @@
   function syncNow(silent) {
     if (!configured() || !_uid || _busy) return Promise.resolve(null);
     _busy = true; _status = 'syncing'; render();
+    var pack = store() || {};
+    var fromSeq = (pack.confirmedState == null) ? 0 : (Number(pack.lastServerSeq) || 0);
     var profileId;
     return ensureProfile(_uid)
-      .then(function (id) { profileId = id; return listEvents(id); })
+      .then(function (id) { profileId = id; return listEvents(profileId, fromSeq); })
       .then(function (remote) {
-        var pending = ((store() || {}).pending || []).slice();
-        return uploadMissing(remote, pending, _uid, profileId);
+        var st = store() || {}, pending = (st.pending || []).slice();
+        var plan = GrowthEvents.syncPlan(remote, pending);
+        if (plan.mode === 'adopt-cloud') {
+          GrowthStore.dropPending(plan.dropIds);
+          pending = pending.filter(function (e) { return plan.dropIds.indexOf(String(e.id)) === -1; });
+          notify(plan.message);
+        }
+        return uploadMissing(pending, _uid, profileId);
       })
-      .then(function () { return listEvents(profileId); })
+      .then(function () { return listEvents(profileId, fromSeq); })
       .then(function (remote) {
-        var pending = ((store() || {}).pending || []).slice(), ids = {}, ack = [], max = 0;
+        var st = store() || {}, pending = (st.pending || []).slice(), ids = {}, ack = [], max = fromSeq;
         remote.forEach(function (e) { ids[e.id] = true; max = Math.max(max, Number(e.serverSeq) || 0); });
         pending.forEach(function (e) { if (ids[e.id]) ack.push(e.id); });
         GrowthStore.merge(remote, ack, profileId, _uid, max);
@@ -222,6 +234,11 @@
     boot: boot, mount: mount, sendCode: sendCode, login: login, logout: logout,
     syncNow: function () { return syncNow(); }, markDirty: markDirty,
     configured: configured, status: function () { return _status; },
+    __test: function (app, uid) {
+      _app = app; _auth = app && app.auth ? app.auth() : null; _db = app && app.rdb ? app.rdb() : null;
+      if (uid) _uid = uid;
+      return { syncNow: syncNow, listEvents: listEvents };
+    },
   };
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', boot);

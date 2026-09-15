@@ -32,6 +32,80 @@ const daySeed = (dayOver = {}) => ({
   [dayKey()]: Object.assign({ selected: [], done: {}, plan: ['吃点心'], planned: false, mood: null, note: '' }, dayOver),
 });
 
+const RealURL = require('url').URL;
+
+async function until(cond) { while (!cond()) await Promise.resolve(); }
+
+// CloudBase rdb 桩：PostgREST 风格链式查询，server_seq 升序 + 分页 + ignoreDuplicates upsert。
+// 要求查询显式 .order('server_seq', {ascending:true})，否则直接抛错（P2-2 不许依赖默认顺序）。
+function makeFakeCloud(opts = {}) {
+  const events = (opts.events || []).map(r => Object.assign({}, r));
+  let seq = events.reduce((m, r) => Math.max(m, Number(r.server_seq) || 0), 0);
+  const profile = { id: opts.profileId || 'p_test', user_id: 'u_test', name: '小小探险家', phone: '', updated_at: 1 };
+  const log = { queries: [], uploadedIds: [] };
+  let failUpsert = opts.failUpsertTimes || 0;
+  const addEvent = (type, payload, day) => {
+    seq++;
+    events.push({
+      id: 'fake-' + seq, user_id: 'u_test', profile_id: profile.id, device_id: 'other',
+      type, day: day || null, t: seq, payload: payload || {}, server_seq: seq,
+    });
+    return seq;
+  };
+  const eventChain = () => {
+    const q = { eq: null, gt: null };
+    const chain = {
+      select() { return chain; },
+      eq(k, v) { q.eq = { k, v }; return chain; },
+      gt(k, v) { q.gt = { k, v }; return chain; },
+      order(col, o) {
+        if (col !== 'server_seq' || !o || o.ascending !== true) {
+          throw new Error('events 查询必须显式 .order("server_seq", {ascending:true})');
+        }
+        return chain;
+      },
+      range(from, to) {
+        let rows = events.filter(r => (!q.eq || r[q.eq.k] === q.eq.v));
+        if (q.gt) rows = rows.filter(r => Number(r[q.gt.k]) > q.gt.v);
+        rows = rows.slice().sort((a, b) => Number(a.server_seq) - Number(b.server_seq));
+        log.queries.push({ gt: q.gt ? q.gt.v : null, from, matched: rows.length });
+        return Promise.resolve({ data: rows.slice(from, to + 1), error: null });
+      },
+      upsert(rowsIn, o) {
+        if (!o || o.onConflict !== 'id') throw new Error('upsert 必须声明 onConflict: "id"');
+        const ids = new Set(events.map(r => r.id));
+        const resp = { error: null };
+        if (failUpsert > 0) { failUpsert--; resp.error = new Error('模拟网络失败'); return Promise.resolve(resp); }
+        (Array.isArray(rowsIn) ? rowsIn : [rowsIn]).forEach(r => {
+          log.uploadedIds.push(r.id);
+          if (ids.has(r.id)) { if (!o.ignoreDuplicates) throw new Error('重复 upsert 且未声明忽略'); return; }
+          ids.add(r.id);
+          seq++;
+          events.push(Object.assign({}, r, { server_seq: seq }));
+        });
+        return Promise.resolve({ error: null });
+      },
+    };
+    return chain;
+  };
+  const profileChain = () => {
+    const chain = {
+      select() { return chain; }, eq() { return chain; }, limit() { return chain; }, order() { return chain; },
+      upsert(row) { Object.assign(profile, row); return Promise.resolve({ error: null }); },
+      then(resolve, reject) { return Promise.resolve({ data: [profile], error: null }).then(resolve, reject); },
+    };
+    return chain;
+  };
+  const app = {
+    auth: () => ({
+      getLoginState: () => Promise.resolve(opts.loggedIn ? { user: { uid: 'u_test' } } : null),
+      signOut: () => Promise.resolve({}),
+    }),
+    rdb: () => ({ from: t => (String(t).indexOf('profile') !== -1 ? profileChain() : eventChain()) }),
+  };
+  return { app, profile, events, log, addEvent, set failUpsertTimes(v) { failUpsert = v; } };
+}
+
 // ---------- 桩环境 ----------
 const mkClassList = () => {
   const set = new Set();
@@ -201,6 +275,25 @@ __lastAnim._f();
 assert(starRollFrom === null, '大满贯落地后 starRollFrom 复位');
 `);
   assert(String(ctx.qels['.balance-num'].textContent) === '6', '大满贯路径数字定格新值');
+
+  console.log('\n== 桩测试：增量合并（GrowthStore.merge） ==');
+  runCase({ seed: mkSeed() }, `
+const evs = [
+  { id: 'i1', type: 'state.import', serverSeq: 1, payload: Object.assign(blank(), { stars: 10 }) },
+  { id: 'd1', type: 'task.done', serverSeq: 2, day: '2026-09-14', task: 0, mode: 'self' },
+  { id: 'd2', type: 'reward.redeem', serverSeq: 3, day: '2026-09-14', reward: 0, cost: 5 },
+  { id: 'd3', type: 'settings.name', serverSeq: 4, value: '增量合并' },
+];
+const full = EVENTS.replay(evs);
+const GrowthStore = window.GrowthStore;
+const sd = x => { const y = JSON.parse(JSON.stringify(x)); delete y.days[dayKey()]; return JSON.stringify(y); };
+GrowthStore.merge(evs.slice(0, 2), [], 'p1', 'u1', 2);
+GrowthStore.merge(evs.slice(2), [], 'p1', 'u1', 4);
+assert(sd(s) === sd(full), '分批增量合并与全量重放逐字段一致');
+assert(growthStore.lastServerSeq === 4 && growthStore.pending.length === 0, 'lastServerSeq 已推进且无遗留待传');
+GrowthStore.merge([], [], 'p1', 'u1', 4);
+assert(sd(s) === sd(full), '网络重试后的空增量不改变状态（幂等）');
+`);
 }
 
 // ---------- V2 本地账本：一个账号一个孩子 ----------
@@ -346,6 +439,220 @@ function eventTests() {
     { id: 'redeem-b', type: 'reward.redeem', serverSeq: 3, day: '2026-09-14', reward: 1, cost: 5 },
   ]);
   assert(concurrentRewards.stars === 0 && concurrentRewards.rewards.length === 1, '并发兑换不会把余额扣成负数');
+
+  // 11) pick 与已完成任务保持一致：另一台设备重新选择，已经 done 的任务不能从可见挑战里消失
+  const pickFix = EVENTS.replay([
+    { id: 'b1', type: 'state.import', serverSeq: 1, payload: EVENTS.blank() },
+    { id: 'd1', type: 'task.done', serverSeq: 2, day: '2026-09-14', task: 1, mode: 'self' },
+    { id: 'p1', type: 'pick', serverSeq: 3, day: '2026-09-14', selected: [0, 2] },
+  ]);
+  const pickDay = pickFix.days['2026-09-14'];
+  assert(pickDay.selected.indexOf(1) !== -1 && pickDay.selected.length === 3
+    && pickDay.done['1'] === 'self', 'pick 保留当天已完成的任务（selected = done ∪ 新选择）');
+  assert(pickDay.plan && pickFix.stars === 1, 'pick 兜底不改写完成与星星');
+
+  // 12) syncPlan 纯策略：<云端有历史 + 本机 pending 含 state.import> → 云端权威
+  const remoteRows = Array.from({ length: 10 }, (_, i) => ({ id: 'rr' + (i + 1), type: 'note', day: '2026-09-01', t: i + 1 }));
+  const planA = EVENTS.syncPlan(remoteRows, [{ id: 'imp', type: 'state.import', t: 9e13, payload: {} }]);
+  assert(planA.mode === 'adopt-cloud' && planA.dropIds.length === 1
+    && planA.dropIds.includes('imp'), '云端已有历史：整包恢复基线不进入云端');
+  assert(/未覆盖云端/.test(planA.message), '给家长提示覆盖被拒绝');
+  const planB = EVENTS.syncPlan([], [{ id: 'imp', type: 'state.import', t: 9e13, payload: {} }]);
+  assert(planB.mode === 'normal' && planB.dropIds.length === 0, '新账号无云端历史：允许作为初始基线上传');
+  const planC = EVENTS.syncPlan(remoteRows, [{ id: 'n1', type: 'note', t: 9e13, day: '2026-09-01', text: 'x' }]);
+  assert(planC.mode === 'normal' && planC.dropIds.length === 0, '普通 pending 不受备份保护策略影响');
+}
+
+// ---------- 云同步端到端：增量拉取 + 旧备份不覆盖云端 ----------
+async function cloudSyncTests() {
+  console.log('\n== 桩测试：云同步（增量与备份保护） ==');
+  globalThis.GROWTH_CLOUD = { envId: 'env-test', pushDelay: 5 };
+  vm.runInThisContext('window.__seedStore=function(p){growthStore=p;s=GrowthEvents.norm(p.state||GrowthEvents.blank())};'
+    + 'window.__appState=function(){return s};window.__appPack=function(){return growthStore};');
+
+  const backupState = { days: {}, stars: 42, counts: [1, 2, 2, 0, 0, 0], rewards: [], name: '本地备份', goal: 4, graduated: [1], prices: [5, 8, 10, 15, 12, 15] };
+  const importEvent = { id: 'imp-backup', type: 'state.import', t: Date.now(), payload: backupState };
+  const remoteBase = (n) => {
+    const rows = [{ id: 'r1', server_seq: 1, user_id: 'u_test', profile_id: 'p_test', device_id: 'other', type: 'state.import', day: null, t: 1, payload: { payload: { days: {}, stars: 50, counts: [0, 0, 0, 0, 0, 0], rewards: [], name: '云端', goal: 3, graduated: [], prices: [5, 8, 10, 15, 12, 15] } } }];
+    for (let i = 2; i <= n; i++) rows.push({ id: 'r' + i, server_seq: i, user_id: 'u_test', profile_id: 'p_test', device_id: 'other', type: 'note', day: '2026-09-01', t: i, payload: { text: '第' + i + '条云端记录' } });
+    return rows;
+  };
+
+  // 场景 A：云端 1001 条历史 + 本机旧备份 import → 云端权威，备份不覆盖
+  const fake1 = makeFakeCloud({ events: remoteBase(1001) });
+  globalThis.__fake1 = fake1;
+  const seedPackA = {
+    version: 2, deviceId: 'd_local', profileId: 'p_local', userId: null,
+    sequence: 0, lastServerSeq: 0, lastSync: 0, confirmedState: null,
+    state: EVENTS.norm(backupState), pending: [Object.assign({}, importEvent)],
+  };
+  globalThis.localStorage.setItem('self-growth-v2', JSON.stringify(seedPackA));
+  vm.runInThisContext('window.__seedStore(JSON.parse(localStorage.getItem("self-growth-v2")))');
+  const t1 = await vm.runInThisContext('Cloud.__test(window.__fake1.app, "u_test")');
+  const resA = await t1.syncNow(true);
+  await until(() => resA !== null);
+  assert(resA === 'ok', '场景 A 同步完成');
+  assert(!fake1.events.some(e => e.id === 'imp-backup'),
+    '云端已有历史（server_seq 1..1001）：旧备份 state.import 未上传');
+  const packA = globalThis.__appPack();
+  const stA = globalThis.__appState();
+  assert(stA.stars === 50 && stA.name === '云端' && stA.goal === 3, '云端状态保持原来的最新 projection');
+  assert(packA.pending.length === 0, '本机待上传里的旧备份 pending 已清理');
+  const noticeA = String((document.getElementById('notice') || {}).innerHTML || '');
+  assert(noticeA.includes('旧备份未覆盖云端'), '家长被明确提示本机旧备份未覆盖云端');
+  // 分页：两次拉取各 2 页（1000 + 1），无遗漏无重复
+  const pageMatches = fake1.log.queries.map(q => q.matched);
+  assert(pageMatches.slice(0, 4).every(m => m === 1001), '1001 条事件都按 server_seq 显式排序分页拉取');
+  const listed = await t1.listEvents('p_test', 0);
+  const listedIds = listed.map(e => e.id);
+  assert(listed.length === 1001 && new Set(listedIds).size === 1001, '远端 1001 条事件全部拉回、无重复');
+  const listedSeqs = listed.map(e => e.serverSeq);
+  assert(listedSeqs.every((v, i) => i === 0 || v > listedSeqs[i - 1]), '事件严格按 server_seq 升序');
+
+  // 场景 B：增量同步只拉 server_seq > lastServerSeq 的新事件
+  fake1.addEvent('note', { text: '新备注' }, '2026-09-02');
+  fake1.addEvent('settings.goal', { value: 5 });
+  fake1.addEvent('task.done', { task: 0, mode: 'self' }, '2026-09-02');
+  const qBefore = fake1.log.queries.length;
+  const resB = await t1.syncNow(true);
+  assert(resB === 'ok', '场景 B 正常同步');
+  const deltaQueries = fake1.log.queries.slice(qBefore);
+  assert(deltaQueries.length === 2, '后续同步两次 listEvents 各只打 1 页');
+  assert(deltaQueries.every(q => q.gt === 1001), '查询条件为 server_seq > lastServerSeq');
+  assert(deltaQueries.every(q => q.matched === 3), '增量只命中 3 条新事件（不再全量拉两遍）');
+  assert(globalThis.__appPack().lastServerSeq === 1004, '增量后 lastServerSeq = 1004');
+  assert(globalThis.__appState().goal === 5 && globalThis.__appState().stars === 51,
+    '远端增量事件进入本机投影');
+
+  // 场景 C：新账号（云端无历史）用本机备份初始化
+  const seedPackC = {
+    version: 2, deviceId: 'd_local2', profileId: 'p_new', userId: null,
+    sequence: 0, lastServerSeq: 0, lastSync: 0, confirmedState: null,
+    state: EVENTS.norm(backupState), pending: [Object.assign({}, importEvent, { id: 'imp-fresh' })],
+  };
+  globalThis.localStorage.setItem('self-growth-v2', JSON.stringify(seedPackC));
+  vm.runInThisContext('window.__seedStore(JSON.parse(localStorage.getItem("self-growth-v2")))');
+  const fakeC = makeFakeCloud({ events: [] });
+  globalThis.__fakeC = fakeC;
+  const tC = await vm.runInThisContext('Cloud.__test(window.__fakeC.app, "u_test")');
+  const resC = await tC.syncNow(true);
+  assert(resC === 'ok', '场景 C 同步成功');
+  const colC = fakeC.events[0] && fakeC.events[0].payload;
+  assert(fakeC.events.length === 1 && fakeC.events[0].type === 'state.import'
+    && (colC.payload || colC).stars === 42, '新账号：本机备份成功成为初始云端状态');
+  assert(globalThis.__appState().stars === 42 && globalThis.__appState().name === '本地备份',
+    '初始化后本机状态与备份一致');
+  assert(globalThis.__appPack().lastServerSeq === 1, '场景 C lastServerSeq = 1');
+
+  // 场景 D：上传网络失败 pending 不丢失，恢复后重传成功
+  globalThis.localStorage.setItem('self-growth-v2', JSON.stringify(seedPackC));
+  vm.runInThisContext('window.__seedStore(JSON.parse(localStorage.getItem("self-growth-v2")))');
+  const fakeD = makeFakeCloud({ events: [] });
+  fakeD.failUpsertTimes = 1;
+  globalThis.__fakeD = fakeD;
+  const tD = await vm.runInThisContext('Cloud.__test(window.__fakeD.app, "u_test")');
+  const resD1 = await tD.syncNow(true);
+  assert(resD1 === null, '场景 D 上传失败时不上报成功');
+  assert(String(globalThis.__appPack().pending.map(e => e.type)).includes('state.import'),
+    '网络失败后本机备份事件仍在待上传队列');
+  assert(fakeD.events.length === 0, '网络失败：云端没有任何数据进入');
+  fakeD.failUpsertTimes = 0;
+  const resD2 = await tD.syncNow(true);
+  assert(resD2 === 'ok', '场景 D 恢复后重传成功');
+  const colD = fakeD.events[0] && fakeD.events[0].payload;
+  assert(fakeD.events.length === 1 && ((colD.payload || colD).stars === 42), '重传后云端账本收到备份基线');
+}
+
+// ---------- Service Worker：带 ?v=xx 的请求命中预缓存 + 导航断网兜底 ----------
+async function swTests() {
+  console.log('\n== 桩测试：Service Worker 缓存 ==');
+  const src = fs.readFileSync(path.join(DIST, 'sw.js'), 'utf8');
+  assert(/const VERSION = 'growth-v\d+'/.test(src), 'SW 使用版本号 VERSION');
+  assert(src.includes('{ ignoreSearch: true }'), 'SW 静态匹配用 ignoreSearch 兜底带 ?v=xx 的请求');
+  const core = /const CORE = \[([\s\S]*?)\];/.exec(src)[1];
+  assert(!core.includes('cloudbase'), '预缓存不包含 CloudBase SDK');
+
+  // 模拟 Cache API：预缓存键不带 query；ignoreSearch 按文件名匹配
+  const entries = {
+    'https://x.test/index.html': 'B-HTML',
+    'https://x.test/styles.css': 'B-CSS',
+    'https://x.test/app.js': 'B-APP',
+    'https://x.test/growth-events.js': 'B-EVENTS',
+  };
+  const cacheStub = {
+    async match(req, opts) {
+      const url = String(typeof req === 'string' ? req : req.url);
+      const u = new RealURL(url, 'https://x.test/sw.js');
+      if (opts && opts.ignoreSearch) {
+        for (const k of Object.keys(entries)) {
+          const ku = new RealURL(k);
+          if (ku.origin === u.origin && ku.pathname === u.pathname) return makeRes(k, entries[k]);
+        }
+        return undefined;
+      }
+      const full = u.href;
+      if (full in entries) return makeRes(full, entries[full]);
+      return undefined;
+    },
+    async put(req, res) { entries[String(typeof req === 'string' ? req : req.url)] = res.body; },
+  };
+  function makeRes(url, body) {
+    return { url, status: 200, type: 'basic', body, clone() { return this; } };
+  }
+  const handlers = {};
+  const network = { calls: 0 };
+  const sandbox = {
+    console,
+    URL: RealURL,
+    setTimeout, clearTimeout,
+    AbortController,
+    self: {
+      location: { origin: 'https://x.test', href: 'https://x.test/sw.js' },
+      addEventListener: (n, f) => { handlers[n] = f; },
+      skipWaiting: () => {},
+    },
+    caches: { open: async () => cacheStub, match: async (req) => cacheStub.match(req) },
+    fetch: async (req) => {
+      network.calls++;
+      return Promise.reject(new Error('离线'));
+    },
+  };
+  vm.createContext(sandbox);
+  vm.runInContext(src, sandbox);
+
+  async function serveReq(req) {
+    let out;
+    if (!handlers['fetch']) throw new Error('sw 未注册 fetch 监听：' + Object.keys(handlers).join(','));
+    try {
+      handlers['fetch']({ request: req, respondWith: (p) => { out = p; } });
+    } catch (syncErr) {
+      console.error('sw fetch 同步错误：', syncErr && syncErr.message);
+      throw syncErr;
+    }
+    if (out === undefined) throw new Error('sw fetch 监听未调用 respondWith（提前 return）');
+    return out;
+  }
+  const req = (url, mode) => ({ url, method: 'GET', mode: mode || 'cors', headers: { get: () => null } });
+
+  // 1) runtime 请求 app.js?v=99 命中无 query 的预缓存
+  const before = network.calls;
+  const hit1 = await serveReq(req('https://x.test/app.js?v=99'));
+  assert((await hit1).body === 'B-APP' && network.calls === before, 'runtime app.js?v=99 命中预缓存');
+  const hit2 = await serveReq(req('https://x.test/styles.css?v=13'));
+  assert((await hit2).body === 'B-CSS', 'styles.css?v=13 命中预缓存');
+  const hit3 = await serveReq(req('https://x.test/growth-events.js?v=13'));
+  assert((await hit3).body === 'B-EVENTS', 'growth-events.js?v=13 命中预缓存');
+  const hit4 = await serveReq(req('https://x.test/app.js'));
+  assert((await hit4).body === 'B-APP', '无 query 的 app.js 精确命中');
+
+  // 2) 离线路径：导航网快失败也能回到缓存 index.html，核心资源不白屏
+  const navFallback = await serveReq({ url: 'https://x.test/index.html?from=pwa', method: 'GET', mode: 'navigate', headers: { get: () => null } });
+  assert((await navFallback).body === 'B-HTML', '离线导航回退到缓存的 index.html');
+
+  // 3) 不在 CORE_FILES 清单里的资源（如 CloudBase SDK 带 ?v=xx）不去蹭精确缓存之外的内容
+  const sdkHit = serveReq(req('https://x.test/cloudbase.esm.js?v=13'));
+  assert(network.calls > before, '未预缓存的资源仍走网络（SDK 版本更新不受兜底污染）');
+  try { await sdkHit; } catch (e) {}
 }
 
 // ---------- 主流程 ----------
@@ -360,6 +667,8 @@ function eventTests() {
 
   stubTests();
   await localStoreTests();
+  await cloudSyncTests();
+  await swTests();
   eventTests();
 
   console.log('\n' + (failures ? `共 ${failures} 项失败` : 'ALL_PASS'));

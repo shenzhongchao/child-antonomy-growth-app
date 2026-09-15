@@ -71,7 +71,14 @@
         d.done[e.task] = e.mode;
         if (e.mode === 'self') { s.stars++; s.counts[e.task]++; }
         return s;
-      case 'pick': day(s, e.day).selected = (e.selected || []).slice(0, 3); return s;
+      case 'pick': {
+        var pd = day(s, e.day), pick;
+        pick = (e.selected || []).slice(0, 3);
+        Object.keys(pd.done).map(Number).sort(function (a, b) { return a - b; })
+          .forEach(function (n) { if (pick.indexOf(n) < 0) pick.unshift(n); });
+        pd.selected = pick.slice(0, 3);
+        return s;
+      }
       case 'plan':
         d = day(s, e.day); d.plan = (e.plan || []).slice(); d.planned = !!e.planned; return s;
       case 'mood': day(s, e.day).mood = typeof e.mood === 'number' ? e.mood : null; return s;
@@ -132,6 +139,44 @@
     return norm(s);
   }
 
+  function advance(confirmed, newEvents) {
+    var events = (newEvents || []).filter(function (e) {
+      return e && typeof e.type === 'string';
+    });
+    var seen = {}, list = [], i;
+    for (i = 0; i < events.length; i++) {
+      var id = String(events[i].id == null ? '' : events[i].id);
+      if (id && seen[id]) continue;
+      if (id) seen[id] = true;
+      list.push(events[i]);
+    }
+    list.sort(function (a, b) {
+      var oa = orderOf(a), ob = orderOf(b);
+      if (oa !== ob) return oa - ob;
+      return String(a.id) < String(b.id) ? -1 : 1;
+    });
+    var st = confirmed ? norm(confirmed) : blank();
+    for (i = 0; i < list.length; i++) st = apply(st, list[i]);
+    return norm(st);
+  }
+
+  function project(confirmed, pending) {
+    var base = { id: '__confirmed__', type: 'state.import', t: 0, payload: confirmed || blank() };
+    return replay([base].concat(pending || []));
+  }
+
+  function syncPlan(remote, pending) {
+    var list = Array.isArray(pending) ? pending : [];
+    var hasRemote = Array.isArray(remote) && remote.length > 0;
+    var hasImport = list.some(function (e) { return e && e.type === 'state.import'; });
+    if (!hasRemote || !hasImport) return { mode: 'normal', dropIds: [], message: '' };
+    return {
+      mode: 'adopt-cloud',
+      dropIds: list.map(function (e) { return String(e.id); }),
+      message: '发现账号已有成长记录，已恢复云端记录；本机导入的旧备份未覆盖云端',
+    };
+  }
+
   function newId(device, seq) {
     return String(device || 'd') + '-' + num(seq, 0) + '-' + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
   }
@@ -145,6 +190,9 @@
     norm: norm,
     apply: apply,
     replay: replay,
+    advance: advance,
+    project: project,
+    syncPlan: syncPlan,
     newId: newId,
   };
 });
