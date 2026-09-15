@@ -1,6 +1,9 @@
 // 离线缓存：让「今天我做主」装到手机桌面后没网也能打开。
 // 改完 dist 里的 HTML/CSS/JS 后，把下面 VERSION 加一，用户下次联网打开就会拿到新版。
-const VERSION = 'growth-v13';
+// 注意：VERSION（growth-vXX）只是 Service Worker Cache Storage 命名空间，
+// 与 index.html 里的 ?v=xx（HTTP/CDN/浏览器缓存 busting）职责不同；
+// 两者互不相等没关系，但都只能向前递增，绝不复用历史版本号。
+const VERSION = 'growth-v14';
 
 // 核心预缓存文件：index.html 里带 ?v=xx 引用它们，fetch 时需要忽略 query 才能命中缓存。
 const CORE_FILES = ['index.html', 'styles.css', 'growth-events.js', 'app.js', 'config.js', 'auth.js'];

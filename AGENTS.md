@@ -20,6 +20,7 @@
 - CloudBase 默认域名 `*.tcloudbaseapp.com` **仅供测试**：浏览器直开会先跳「访问提示中间页」，有访问频率限制，且可能因风控被封禁。不要在文档或配置里把它写成长期入口（这一点曾写错过，务必保持）。
 - PWA 三件套：`dist/manifest.json`、`dist/sw.js`、图标一律由 `python scripts/make-icons.py` 从 `assets/star-friend.png` 生成（含 maskable 安全区计算），不要手改图标。图标保持 PNG（iOS 的 apple-touch-icon 不认 WebP），插画才用 WebP。
 - Service Worker 只在 `https:` / `localhost` 下注册，注册代码内联在 `index.html` 末尾——`app.js` 里没有任何 PWA 相关代码，保持这样。
+- 版本号有两套、职责不同：`index.html` 资源引用与 `auth.js` 里的 `?v=xx`（含 `cloudbase.esm.js?v=xx`）是 **HTTP/CDN/浏览器缓存 busting**；`dist/sw.js` 的 `growth-vXX` 只是 **Service Worker Cache Storage 命名空间**（二者不必相等）。两套版本号都只能向前单调递增，**绝不复用历史版本号**——`?v=13` 曾真实发布过，若回退使用会让灰度设备的旧 HTTP/SW 缓存命中旧 app.js，造成新旧核心脚本混装。改 `dist/` 后：`?v` 加一 + `VERSION` 加一，缺一不可。
 - 导航请求为 network-first，但带 2.5s 超时回退缓存（`NAV_TIMEOUT_MS`）：弱网/断网时不会白屏干等。
 
 ## 架构（小型原生应用）

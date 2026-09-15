@@ -47,10 +47,11 @@
 - 老数据包无 confirmedState 时自动走全量拉取路径，兼容旧设备
 
 ## Hypotheses / uncertain points（review 需关注的剩余风险）
-- `.order('server_seq', { ascending: true })` 选项对象按 Supabase 风格写，真实 CloudBase rdb 未联调；若签名不同只需改 auth.js 一行
-- 云端有历史 + 本机「恢复后的真实新操作」pending 会被整体丢弃（保守策略，家长需重新操作）；toast 只能提示这一次
+- 云端有历史时，恢复备份后产生的「真实新操作」pending 会被整体丢弃（保守策略，家长需重新操作）；toast 只提示这一次
 - 事件顺序内的 pick 兜底假设已被 verify 覆盖，但无双真机验收
 - SW 忽略 query 只对 CORE 白名单生效；若未来新增需带 query 缓存的核心文件，记得同步加进 CORE_FILES
+- 版本号纪律（2026-09-15 review 修正）：`?v` 资源 query 与 SW `growth-vXX` 职责不同（HTTP/CDN busting vs SW Cache Storage 命名空间），都只向前递增、绝不复用历史版本（?v=13 曾真实发布回退过，属 blocking 隐患，已改为 ?v=15 / growth-v14 并加防回退测试）
+- [P2 非阻塞] 未来可把「state.import 仅允许作为 profile 首条初始化基线」提升为事件账本 invariant，届时 syncPlan 的客户端保守清理可简化
 
 ## Commands run
 ```bash
@@ -61,5 +62,4 @@ py -m http.server 8080 -d dist   # 首页 / app.js 均 200
 
 ## Next steps for reviewer
 - 真机联调：CloudBase envId + 手机号登录 + 双设备恢复（重点：场景 A 提示文案、场景 B 增量行为）
-- 确认 CloudBase rdb `.order` 签名；必要时改 auth.js 一行
-- 建议 commit message：`fix: PWA 旧版本参数缓存兜底；同步改增量；旧备份不覆盖云端；分页显式 server_seq 排序`
+- 建议 commit message：`fix(review): 资源版本升至 ?v=15 / growth-v14 防旧缓存混装，并加版本防回退测试`

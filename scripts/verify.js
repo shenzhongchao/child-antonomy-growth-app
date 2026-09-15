@@ -8,6 +8,12 @@ const { execFileSync } = require('child_process');
 
 const ROOT = path.join(__dirname, '..');
 const DIST = path.join(ROOT, 'dist');
+
+// 核心静态资源 ?v= 版本：HTTP/CDN/浏览器缓存 busting。只能向前递增，绝不复用历史版本号
+// （v=13 曾发布过，回退会让旧缓存命中旧文件，新旧核心脚本混装）。当前指定版本。
+const APP_ASSET_V = 15;
+// Service Worker Cache Storage 命名空间（growth-vXX），与 ?v=xx 职责不同、不必相等，同样只递增。
+const SW_CACHE_V = 'growth-v14';
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
 const EVENTS = require(path.join(DIST, 'growth-events.js'));
 const RealDate = Date;
@@ -571,6 +577,17 @@ async function swTests() {
   assert(src.includes('{ ignoreSearch: true }'), 'SW 静态匹配用 ignoreSearch 兜底带 ?v=xx 的请求');
   const core = /const CORE = \[([\s\S]*?)\];/.exec(src)[1];
   assert(!core.includes('cloudbase'), '预缓存不包含 CloudBase SDK');
+  assert(new RegExp("const VERSION = '" + SW_CACHE_V + "';").test(src), 'SW Cache Storage 版本推进到 ' + SW_CACHE_V + '（不复用历史命名空间）');
+
+  // 资源 query 版本防回退/复用
+  const idx = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
+  for (const f of ['styles.css', 'growth-events.js', 'app.js', 'config.js', 'auth.js']) {
+    assert(idx.includes(f + '?v=' + APP_ASSET_V), f + ' 使用当前指定版本 ?v=' + APP_ASSET_V);
+  }
+  const vs = (idx.match(/v=(\d+)/g) || []).map(x => Number(x.slice(2)));
+  assert(vs.length && Math.min.apply(null, vs) >= APP_ASSET_V, 'index.html 资源 query 版本未回退/复用历史版本');
+  const authSrc = fs.readFileSync(path.join(DIST, 'auth.js'), 'utf8');
+  assert(authSrc.includes('cloudbase.esm.js?v=' + APP_ASSET_V), 'cloudbase.esm.js 使用 ?v=' + APP_ASSET_V);
 
   // 模拟 Cache API：预缓存键不带 query；ignoreSearch 按文件名匹配
   const entries = {
