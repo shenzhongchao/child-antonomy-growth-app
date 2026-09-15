@@ -11,9 +11,9 @@ const DIST = path.join(ROOT, 'dist');
 
 // 核心静态资源 ?v= 版本：HTTP/CDN/浏览器缓存 busting。只能向前递增，绝不复用历史版本号
 // （v=13 曾发布过，回退会让旧缓存命中旧文件，新旧核心脚本混装）。当前指定版本。
-const APP_ASSET_V = 15;
+const APP_ASSET_V = 16;
 // Service Worker Cache Storage 命名空间（growth-vXX），与 ?v=xx 职责不同、不必相等，同样只递增。
-const SW_CACHE_V = 'growth-v14';
+const SW_CACHE_V = 'growth-v15';
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
 const EVENTS = require(path.join(DIST, 'growth-events.js'));
 const RealDate = Date;
@@ -581,7 +581,7 @@ async function swTests() {
 
   // 资源 query 版本防回退/复用
   const idx = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
-  for (const f of ['styles.css', 'growth-events.js', 'app.js', 'config.js', 'auth.js']) {
+  for (const f of ['styles.css', 'growth-events.js', 'history.css', 'history.js', 'app.js', 'config.js', 'auth.js']) {
     assert(idx.includes(f + '?v=' + APP_ASSET_V), f + ' 使用当前指定版本 ?v=' + APP_ASSET_V);
   }
   const vs = (idx.match(/v=(\d+)/g) || []).map(x => Number(x.slice(2)));
@@ -675,7 +675,7 @@ async function swTests() {
 // ---------- 主流程 ----------
 (async () => {
   console.log('== 语法检查 ==');
-  for (const f of ['growth-events.js', 'app.js', 'auth.js', 'config.js', 'sw.js']) {
+  for (const f of ['growth-events.js', 'history.js', 'app.js', 'auth.js', 'config.js', 'sw.js']) {
     try {
       execFileSync(process.execPath, ['--check', path.join(DIST, f)], { stdio: 'pipe' });
       console.log('ok - node --check dist/' + f);
@@ -683,6 +683,15 @@ async function swTests() {
   }
 
   stubTests();
+
+  console.log('\n== 成长足迹纯逻辑回归 ==');
+  try {
+    execFileSync(process.execPath, [path.join(ROOT, 'scripts', 'verify-history.js')], { stdio: 'inherit' });
+    console.log('ok - verify-history ALL_PASS');
+  } catch (e) {
+    assert(false, 'verify-history.js 存在失败项');
+  }
+
   await localStoreTests();
   await cloudSyncTests();
   await swTests();

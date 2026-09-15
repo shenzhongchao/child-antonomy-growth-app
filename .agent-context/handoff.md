@@ -1,65 +1,52 @@
 # Agent Handoff
 
 ## Task
-上线前稳定性修复（不加新功能、不改核心逻辑/视觉）：
-1) PWA 首装后离线打开缓存 miss；2) 「恢复旧备份→登录已有云账号」覆盖云端；3) 同步全量拉两遍改增量；4) 分页查询显式按 server_seq 排序。
-另做一个小 reducer 修复：pick 保留当天已完成任务。
+新增「成长足迹」V1：在成长页提供历史记录入口，支持月历、单日详情、近 4 周自主/提醒趋势；历史只读，不新增业务事件、不改同步账本。
 
 ## Current status
 - Status: ready_for_review
-- Last agent: opencode
-- Branch: 非 git 仓库（无分支）
-- Related: docs/development/child-antonomy-growth-app 上线前稳定性修复指令.md
+- Last agent: opencode (GLM, local)
+- Branch: `feature/growth-history-v1`
+- Base: `main@dc4715696984351799e47ee0220dc600ba509e94`
 
-## Goal / acceptance criteria（全部达成）
-- [x] 带 `?v=xx` 的核心静态资源可命中预缓存；首次在线打开后断网可完整启动；导航 network-first + 2.5s 兜底逻辑未动；CloudBase SDK 不进 precache
-- [x] 云端有历史时本机 state.import 不上传、云端为权威、给家长明确提示；云端无历史时可作为初始基线（新账号迁移）
-- [x] pending 上传失败不丢失，恢复后自动重传
-- [x] 正常同步只拉 `server_seq > lastServerSeq` 增量；首次登录/旧数据包自动全量
-- [x] 事件查询显式 `.order('server_seq', {ascending:true})`；1001 条事件分页无漏、无重复、升序
-- [x] pick 保留当天已完成任务（selected = done ∪ 新选择，≤3）
-- [x] `node scripts/verify.js` → ALL_PASS（71 项 ok，0 FAIL）
+## 本轮完成（Local agent 收尾）
+- [x] `scripts/verify.js`：`APP_ASSET_V=16`、`SW_CACHE_V='growth-v15'`；资源版本断言加入 `history.css/history.js`；语法检查加入 `history.js`；未删任何既有断言
+- [x] `scripts/verify.js` 主流程已接入 `scripts/verify-history.js`（`execFileSync + stdio inherit`，失败计入 failures，未引入测试框架）
+- [x] `AGENTS.md`：补充 `dist/history.js` 只读派生层架构说明、回归命令 `node scripts/verify-history.js`、成长足迹产品边界
+- [x] `dist/history.js` 文案小修：趋势标题「我越来越会自己做主了吗？」→「最近的练习是什么样？」；「最近两周自主更多了」→「最近两周记录到更多自主完成」（不改功能、不动版本号，理由见下）
+- [x] `node --check`（app/auth/growth-events/history/sw/config）全部通过
+- [x] verify-history: **ALL_PASS**（10 项）；verify.js: **ALL_PASS**（成长足迹已并入主回归）
 
-## Files touched
-- `dist/growth-events.js`
-  - 新增纯函数 `advance(confirmed, newEvents)`（对确认投影按 server_seq 应用增量、id 幂等）、`project(confirmed, pending)`（把 confirmed 打包为基线事件 + pending 重放）、`syncPlan(remote, pending)`（backup 冲突决策）
-  - `pick` reducer：selected = 当天已 done 任务 ∪ 新选择（done 优先），上限 3
-- `dist/app.js`
-  - 数据包新增 `confirmedState` 字段；旧数据包兼容（缺省置 null → 下次同步自动全量重建）
-  - `mergeGrowth` 重写：先 advance confirmedState，再 project 出最终 `s`；`GrowthStore` 增加 `dropPending(ids)`
-- `dist/auth.js`
-  - `listEvents(profileId, afterSeq)` 增量查询 + 显式 `.order('server_seq',{ascending:true})`（分页 size 1000 不变，JS 侧最终 sort 保留为防御）
-  - `uploadMissing` 不再依赖全量 remote 去重，upsert `ignoreDuplicates` 保证幂等
-  - `syncNow`：fromSeq=lastServerSeq（confirmedState 缺失→0 全量）；首拉后用 `GrowthEvents.syncPlan` 决策；云端有历史 + 本机 pending 含 import → 整体丢弃该批 pending（保守）、toast 提示、云端不受影响；否则正常上传→再拉 delta→merge
-  - `ensure()` 支持注入测试桩；`Cloud.__test(app, uid)` 为 verify 钩子
-- `dist/sw.js`
-  - VERSION → growth-v13；`serveStatic()`：精确匹配 → CORE 白名单文件 `cache.match(req,{ignoreSearch:true})` → fetch + 运行时缓存；SDK 等 ?v=xx 资源不受 ignoreSearch 兜底
-- `dist/index.html`
-  - 资源引用 `?v=14` → `?v=13` 与 SW VERSION 统一；修复了过程中误写入的 UTF-8 BOM
-- `scripts/verify.js`
-  - PostgREST 风格假 rdb 桩（profiles/growth_events、server_seq 自增、强制断言显式 order、ignoreDuplicates upsert、可模拟上传失败）
-  - 新增回归：分批 merge 与全量 replay 逐字段一致、空增量幂等、场景 A（云端 1001 条历史 + 本机旧备份 → 云端权威、不上传、家长提示）、分页无漏无重复升序、场景 B（增量只命中 3 条、lastServerSeq=1004）、场景 C（新账号备份初始化）、场景 D（上传失败 pending 不丢+重传）、syncPlan 纯策略 ×3、pick 一致性、SW ignoreSearch 命中 ×4（vm 沙盒模拟 Cache API）+ 离线导航兜底
-
-## Confirmed facts
-- 增量模型成立：`s = project(advance(上一 confirmedState, delta), pending)` 与全量 `replay(all)` 逐字段一致（verify 实测）
-- 1001 条事件分页 = 2 页（1000+1）；假 rdb 强制要求 `.order('server_seq',{ascending:true})`，缺失会抛错（测试曾以此抓住过桩的旧写法）
-- `python(-m ...) / py -m http.server` 200 服务 `/` 与 `/app.js`
-- 老数据包无 confirmedState 时自动走全量拉取路径，兼容旧设备
-
-## Hypotheses / uncertain points（review 需关注的剩余风险）
-- 云端有历史时，恢复备份后产生的「真实新操作」pending 会被整体丢弃（保守策略，家长需重新操作）；toast 只提示这一次
-- 事件顺序内的 pick 兜底假设已被 verify 覆盖，但无双真机验收
-- SW 忽略 query 只对 CORE 白名单生效；若未来新增需带 query 缓存的核心文件，记得同步加进 CORE_FILES
-- 版本号纪律（2026-09-15 review 修正）：`?v` 资源 query 与 SW `growth-vXX` 职责不同（HTTP/CDN busting vs SW Cache Storage 命名空间），都只向前递增、绝不复用历史版本（?v=13 曾真实发布回退过，属 blocking 隐患，已改为 ?v=15 / growth-v14 并加防回退测试）
-- [P2 非阻塞] 未来可把「state.import 仅允许作为 profile 首条初始化基线」提升为事件账本 invariant，届时 syncPlan 的客户端保守清理可简化
-
-## Commands run
-```bash
-node --check dist/app.js dist/auth.js dist/growth-events.js dist/sw.js
-node scripts/verify.js
-py -m http.server 8080 -d dist   # 首页 / app.js 均 200
+## 测试结果
+```
+node scripts/verify-history.js → ALL_PASS
+node scripts/verify.js         → ALL_PASS（约 130 项，含成长足迹纯逻辑回归）
 ```
 
-## Next steps for reviewer
-- 真机联调：CloudBase envId + 手机号登录 + 双设备恢复（重点：场景 A 提示文案、场景 B 增量行为）
-- 建议 commit message：`fix(review): 资源版本升至 ?v=15 / growth-v14 防旧缓存混装，并加版本防回退测试`
+## 浏览器验收（headless Edge + 静态核查）
+- `python -m http.server` 下全部资源（含 `history.css?v=16`、`history.js?v=16`）HTTP 200
+- 首页四页导航正常渲染；成长页历史入口 `#growthHistoryEntry` 正确注入在 `.tip` 之前
+- 打开成长足迹：月历、图例、近 4 周趋势区渲染；无记录时显示空状态「还没有足够记录。以后每一点主动，都会慢慢留在这里。」
+- 单日详情（种子数据 2026-09-01：自主 1 + 提醒 1 + 计划 + 心情 + 家长鼓励 + 奖励兑换）：挑战状态区分「★ 自己想起来的 / ● 提醒后完成」，我的一天/心情/给你的一句话/当天兑换各块正确显示，可返回月历
+- dialog 长内容：`overflowY:auto`、`scrollHeight > clientHeight` 时可正常滚动（`max-height:90dvh` 生效）
+- 空白日只标「没有记录」，无红黄绿/失败感；「提醒后完成」用中性蓝色，非负面样式
+- 移动端：headless 视口 492px（headless "new" 模式窗口宽度下限，无法强制 375）下 `document.scrollWidth < innerWidth` 无横向溢出；CSS 审查确认 `.history-shell` 用 `min(88vw/84vw, …)`、网格 `minmax(0,1fr)`、标签 flex-wrap，≤480px 有专门压缩断点，375/390 理论上不会溢出
+- 未在真实手机模拟器逐项人工验收 375×667/390×844 —— 建议合并前用 DevTools 设备模拟快速人工确认一次
+- 🚩 已知限制（非阻塞）：本轮为人工 headless 验证 + 代码/CSS 静态核查，未覆盖「断网重开成长足迹」实测；SW 已把 `history.css/history.js` 加入 CORE 预缓存（`growth-v15`），离线可用性由缓存机制保证
+
+## 版本号决策
+本轮只改了 `dist/history.js` 两处文案，但**未**把 `?v=16/growth-v15` 再加一：`?v=16` 与 `growth-v15` 尚未发布给任何设备（产品未上线、PR 仍为 draft），在同一次 PR 内改文件不构成历史版本复用风险；用户指令明确固定 verify.js 断言为 16/growth-v15。**注意：若 PR 合并后又改 dist/，则必须 ?v→17 + growth-v16。**
+
+## Files touched (本轮)
+- `scripts/verify.js`：版本常量 16/growth-v15、检查清单加 history、主流程接入 verify-history
+- `AGENTS.md`：架构 + 回归命令 + 成长足迹产品边界
+- `dist/history.js`：两处文案（去评价化）
+
+## Product boundaries
+- 不做连续打卡、排行榜、红黄绿评分、AI 评价、历史编辑
+- 「提醒后完成」不扣分、不用负面颜色
+- 趋势只能说「记录到的自主完成更多了」，不把次数解释为能力提升
+
+## Next steps
+- ChatGPT 最终 review PR #1（文案 diff：verify.js / AGENTS.md / history.js 两行）
+- 合并前建议 DevTools 设备模拟（375/390）快速人工过一遍成长足迹
