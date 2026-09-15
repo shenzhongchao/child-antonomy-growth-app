@@ -37,7 +37,7 @@
 - 通过 PowerShell 读取文件时，请显式指定 `-Encoding UTF8`；文件为 UTF-8 编码，PS 5.1 控制台中显示的乱码仅仅是控制台显示问题（已使用 `node --check dist/app.js` 验证）。
 - 编辑前请先运行 Node 语法检查：`node --check dist/app.js`。由于行很长，编辑时切勿使用贪心的全文匹配方式（即避免容易误匹配的多行编辑）。
 - 家长面板 PIN 码为 1234——仅用于防误触，并非安全机制。需保留此行为。
-- 回归验证：`node scripts/verify.js`（语法检查 + V2 本地账本 + 事件合并 + 既有产品行为，内部会先跑成长足迹纯逻辑回归）；另可单独跑 `node scripts/verify-history.js`。改完 `dist/` 后必须跑一遍 verify.js，全绿再提交。手动验证仍可运行服务器，检查四个页面 + 家长面板，并确认完成任务时会加分（重复完成会被阻止）。
+- 回归验证：`node scripts/verify.js`（语法检查 + V2 本地账本 + 事件合并 + 既有产品行为，内部会先跑成长足迹纯逻辑回归和安全回归）；另可单独跑 `node scripts/verify-history.js` 和 `node scripts/verify-security.js`。改完 `dist/` 后必须跑一遍 verify.js，全绿再提交。手动验证仍可运行服务器，检查四个页面 + 家长面板，并确认完成任务时会加分（重复完成会被阻止）。
 - 成长足迹产品边界：展示趋势只能说「记录到的自主完成更多了」，不得仅凭次数断言「能力提升了/进步了多少」；不做连续打卡、排行榜、完成率评分、红黄绿警告或「退步」；历史只读，家长不能修改过去记录。
 - 改过 `dist/` 里任何 HTML/CSS/JS 后，务必把 `dist/sw.js` 顶部的 `VERSION` 加一，否则老用户浏览器的 Service Worker 缓存不会刷新。
 - 线上域名与 `localhost` 是互不相通的存储源；绑定同一手机号后通过云端事件账本恢复。未登录时数据仍只在当前浏览器。
@@ -47,7 +47,10 @@
 - 产品边界是**一个家长账号只对应一个孩子**。`profiles.user_id` 有 UNIQUE 约束；不要重新增加档案列表、添加孩子、切换孩子或顶部当前孩子胶囊。
 - 原则：本地优先、永不打扰。每次操作先写 `self-growth-v2.state + pending`；未配置 envId / 未登录 / 断网 / 报错时不弹窗阻断孩子。
 - 云端 PostgreSQL 的 `profiles` 只保存孩子元数据，`growth_events` 只追加事件。普通用户对事件表只有 `SELECT, INSERT`，严禁恢复整包 `profiles.state` 或 last-write-wins。
-- 本环境是 PG 模式，文档型数据库实测不可用。`auth.js` 使用 `app.rdb().from(...)`（PostgREST 风格，返回 `{data, error}`）。完整新建表 SQL 是 `cloud/schema-v2.sql`。
+- 本环境是 PG 模式，文档型数据库实测不可用。`auth.js` 使用 `app.rdb().from(...)`（PostgREST 风格，返回 `{data, error}`）。
+  - **新空数据库**使用完整建表 SQL：`cloud/schema-v3.sql`（含 RLS + 服务端事件校验 trigger）。
+  - **已有数据库安全升级**使用迁移：`cloud/migrations/2026-09-15-security-hardening.sql`（不 DROP 表、不删数据、可重复执行）。
+  - ⚠️ `schema-v2.sql` / `schema-v3.sql` 都会 DROP 表，**只能用于全新空环境**；已有数据只能跑 migrations。
 - `dist/cloudbase.esm.js` 是**内置的、真正自包含的** CloudBase JS SDK v3.9.3（785KB，用 esbuild 把 `@cloudbase/js-sdk` 连同依赖一起 bundle 成单文件 ESM，`export default`）。不要手改。
   ⚠️ **不要**再用 jsdelivr 的 `+esm` 产物覆盖它：那个文件开头有 8 条 `import * as X from "/npm/<pkg>@<ver>/+esm"` 的**根相对路径**，只有在 `cdn.jsdelivr.net` 域名下才解析得通，放到自有域名或 localhost 上必然 404（2026-09-14 踩过这个坑，此前的「自带依赖、无外部引用」说法是错的）。
   重新生成：临时目录 `npm i @cloudbase/js-sdk@<版本> esbuild`，入口文件写 `import cb from '@cloudbase/js-sdk'; export default cb;`，再 `esbuild --bundle --format=esm --minify --target=es2019`。生成后用 `grep -c '/npm/'` 确认结果为 0。

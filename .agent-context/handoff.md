@@ -1,71 +1,41 @@
 # Agent Handoff
 
 ## Task
-执行上线前安全加固：修复备份输入导致的存储型 XSS 风险；对成长事件做客户端白名单/边界校验；在 PostgreSQL 层增加服务端事件校验并限制 `state.import` 只能作为首条初始化基线；补安全回归与上线安全清单。
+上线前安全加固收尾（承接 ChatGPT 已完成的 `security/hardening-v1` 核心实现）：推进缓存版本、奖励日期 defense-in-depth escape、主回归接入安全测试、文档与验证。
 
 ## Current status
-- Status: blocked
-- Last agent: ChatGPT
-- Branch: `security/hardening-v1`
-- Base: `main@58e7f1c24d0214645a082a4e0e392076595ef5fd`
+- Status: ready_for_review
+- Last agent: opencode (GLM)
+- Branch: `security/hardening-v1`（已 commit + push，未 merge PR #2）
 
-## ChatGPT 已完成
-- [x] `dist/growth-events.js`
-  - `norm()` 严格清洗日期、task/reward id、mood、name/note、计数、价格、奖励记录等
-  - 新增 `validEvent()`，`replay/advance/apply` 忽略不合法事件
-  - 恶意备份中的非法 `reward.date` 不再进入状态，从数据层封住已发现的存储型 XSS 路径
-- [x] `cloud/migrations/2026-09-15-security-hardening.sql`
-  - 普通事件 payload 上限 8 KiB；state.import 上限 512 KiB
-  - 事件 type/字段白名单与范围校验
-  - profile 级 `pg_advisory_xact_lock`
-  - `state.import` 仅允许 profile 第一条事件，避免晚到 import 重置已有账本
-- [x] `cloud/schema-v3.sql`
-  - 新空环境安全 bootstrap（包含 RLS + 事件校验 trigger）
-  - 顶部明确标记为破坏性，仅限全新空环境
-- [x] `scripts/verify-security.js`
-  - 覆盖恶意 reward.date、非法日期/任务、超长 note、非法价格、伪造 task.done 以及 SQL migration 关键约束
-  - ChatGPT 本地等价代码执行结果：`SECURITY_ALL_PASS`
-- [x] `SECURITY.md`
-  - 生产安全边界、数据库迁移、安全来源、短信限频、HTTPS、PIN 边界、小程序禁上线说明
-- [x] 已归档上一任务 handoff
+## 本轮完成
+- [x] `dist/index.html`：7 个核心资源 `?v=16` → `?v=17`
+- [x] `dist/auth.js`：`cloudbase.esm.js?v=16` → `?v=17`（verify.js 要求与 APP_ASSET_V 一致，必须同步）
+- [x] `dist/sw.js`：`growth-v15` → `growth-v16`（其余 SW 逻辑未动）
+- [x] `dist/app.js`：奖励券历史日期渲染 `${r.date}` → `${esc(r.date)}`（仅此一处，未做其他重构）
+- [x] `scripts/verify.js`：`APP_ASSET_V=17`、`SW_CACHE_V='growth-v16'`；在 `== 快速回归 ==` 后新增 `== 安全回归 ==` 段，通过 `execFileSync` 执行 `scripts/verify-security.js`，失败计入 failures
+- [x] `AGENTS.md`：回归命令补充 `node scripts/verify-security.js`；新空库用 `cloud/schema-v3.sql`、已有库用 `cloud/migrations/2026-09-15-security-hardening.sql`；注明两个 schema 会 DROP 表、已有数据只能跑 migrations
 
-## Blocker / local Agent must finish
-当前修改了 `dist/growth-events.js`，但资源缓存版本尚未推进；另外主 `scripts/verify.js` 还没接入安全回归。合并前必须完成：
+## 测试结果（全部通过）
+- `node scripts/verify-security.js` → **SECURITY_ALL_PASS**（15项：恶意 reward.date 丢弃、非法日期/任务、done/mood 白名单、字符串/数值边界、伪造事件 replay 忽略、DB 迁移关键约束）
+- `node scripts/verify-history.js` → **ALL_PASS**（10项）
+- `node scripts/verify.js` → **ALL_PASS**（含 growth-events/app/auth/config/sw 语法检查、备份恢复/徽章/大满贯/夜间/飞星/合并桩测试、成长足迹回归、**安全回归（SECURITY_ALL_PASS 内嵌）**、V2 本地账本、云同步 4 场景、SW 缓存、事件账本）
+- 6 个 dist 文件 `node --check` 全部通过
 
-1. `dist/index.html`
-   - 所有当前 `?v=16` 核心资源统一推进到 `?v=17`
-2. `dist/sw.js`
-   - `growth-v15` → `growth-v16`
-3. `scripts/verify.js`
-   - `APP_ASSET_V = 17`
-   - `SW_CACHE_V = 'growth-v16'`
-   - 在主流程执行 `scripts/verify-security.js`，失败必须计入 failures
-4. `dist/app.js`
-   - 奖励券历史日期渲染从 `${r.date}` 改为 `${esc(r.date)}`，作为 defense-in-depth；不要改其他业务逻辑
-5. `AGENTS.md`
-   - 回归命令补充 `node scripts/verify-security.js`
-   - 新环境完整 SQL 改为 `cloud/schema-v3.sql`
-   - 已有环境安全迁移指向 `cloud/migrations/2026-09-15-security-hardening.sql`
-6. 运行：
-   - `node --check dist/growth-events.js dist/app.js dist/auth.js dist/history.js dist/sw.js`
-   - `node scripts/verify-security.js`
-   - `node scripts/verify-history.js`
-   - `node scripts/verify.js`
-   - 必须全部 PASS
-7. 浏览器 smoke test：恢复正常备份、奖励屋/历史页、正常完成任务/兑换，确认无回归
-8. 更新本 handoff → `ready_for_review`，commit/push 同一分支，不要 merge
+## 恶意备份测试结果
+Node 桩环境（同 verify.js harness）恢复恶意备份 JSON（reward.date = `<img src=x onerror=alert(1)>`）：
+- **SMOKE_MALICIOUS_PASS**：未触发 alert；恶意 reward 记录不进入状态（`GrowthEvents.norm` 丢弃）；其余合法字段正常保留；奖励屋渲染日期已转义
 
-## CloudBase console manual step (cannot be executed by ChatGPT)
-在当前已有数据库环境的 SQL 编辑器执行：
-`cloud/migrations/2026-09-15-security-hardening.sql`
+## 浏览器 smoke test 结果说明
+- 本地环境无浏览器自动化工具，交互式 UI 冒烟（导出/恢复/奖励屋/足迹/任务/兑换/家长设置/刷新）通过以下两层覆盖：
+  1. verify.js 的桩测试（家长面板备份导出/恢复、restore 非法输入不动数据、完成任务加分、兑换余额、家长设置写入、localStorage 持久化）均 PASS；
+  2. `python -m http.server 8080 -d dist` 启动正常，index.html / app.js 均返回 200。
+- 上线合入前建议真机再点一遍关键路径（尤其奖励券日期为转义文本）。
 
-执行后再做一次真实手机号登录 + 正常 task.done 同步；若环境是全新空库则直接用 `cloud/schema-v3.sql`，不要两个都跑。
-
-## Production console checklist
-- 安全来源只允许正式精确域名 + 必要开发域名，不添加无关通配符
-- 短信验证码每日单手机号上限设置为 5–10 条/天，保留平台频率限制/Captcha
-- 正式域名只用 HTTPS
-- `cloud/phone-login/` 仍是二期未联调脚手架，不部署生产
+## 未完成 / 后续
+- CloudBase 控制台手动步骤（本地无法执行）：已有数据库执行 `cloud/migrations/2026-09-15-security-hardening.sql`；全新空库才可用 `cloud/schema-v3.sql`，不要两个都跑。
+- 生产控制台 checklist（安全来源、短信限频、HTTPS）见 SECURITY.md，仍未动。
+- PR #2 未 merge，等待 review。
 
 ## Product/security boundaries
 - `1234` PIN 仅防误触，不是认证密码
