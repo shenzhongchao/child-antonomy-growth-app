@@ -28,6 +28,7 @@
 - `dist/app.js`：全局状态 `s` 是 `self-growth-v2.state` 的本机投影；每个业务动作同时更新投影并向 `pending` 追加事件。`render()` 通过字符串模板和内联 `onclick` 处理程序重新渲染四页面 UI（今天/计划/成长/奖励）。
 - `dist/growth-events.js`：浏览器与 Node 共用的纯函数事件层，负责 `blank/norm/apply/replay/newId`。
 - `dist/auth.js`：家长手机号登录、唯一孩子档案绑定、待上传事件补传和云端事件重放。
+- `dist/history.js`：「成长足迹」**只读派生层**——`state projection → daySummary / monthModel / trend → 只读历史 UI`（月历、单日详情、近 4 周趋势）。它不产生业务 event、不写 state、不访问 CloudBase、不允许修改历史；纯函数可在 Node 中直接测试（`scripts/verify-history.js`）。
 
 ## 强约束与易踩坑点
 
@@ -36,7 +37,8 @@
 - 通过 PowerShell 读取文件时，请显式指定 `-Encoding UTF8`；文件为 UTF-8 编码，PS 5.1 控制台中显示的乱码仅仅是控制台显示问题（已使用 `node --check dist/app.js` 验证）。
 - 编辑前请先运行 Node 语法检查：`node --check dist/app.js`。由于行很长，编辑时切勿使用贪心的全文匹配方式（即避免容易误匹配的多行编辑）。
 - 家长面板 PIN 码为 1234——仅用于防误触，并非安全机制。需保留此行为。
-- 回归验证：`node scripts/verify.js`（语法检查 + V2 本地账本 + 事件合并 + 既有产品行为）。改完 `dist/` 后必须跑一遍，全绿再提交。手动验证仍可运行服务器，检查四个页面 + 家长面板，并确认完成任务时会加分（重复完成会被阻止）。
+- 回归验证：`node scripts/verify.js`（语法检查 + V2 本地账本 + 事件合并 + 既有产品行为，内部会先跑成长足迹纯逻辑回归）；另可单独跑 `node scripts/verify-history.js`。改完 `dist/` 后必须跑一遍 verify.js，全绿再提交。手动验证仍可运行服务器，检查四个页面 + 家长面板，并确认完成任务时会加分（重复完成会被阻止）。
+- 成长足迹产品边界：展示趋势只能说「记录到的自主完成更多了」，不得仅凭次数断言「能力提升了/进步了多少」；不做连续打卡、排行榜、完成率评分、红黄绿警告或「退步」；历史只读，家长不能修改过去记录。
 - 改过 `dist/` 里任何 HTML/CSS/JS 后，务必把 `dist/sw.js` 顶部的 `VERSION` 加一，否则老用户浏览器的 Service Worker 缓存不会刷新。
 - 线上域名与 `localhost` 是互不相通的存储源；绑定同一手机号后通过云端事件账本恢复。未登录时数据仍只在当前浏览器。
 

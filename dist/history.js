@@ -179,12 +179,12 @@
     var rows = t.tasks.filter(function (x) { return x.self || x.help; }).map(function (x) {
       var total = x.self + x.help;
       var pct = total ? Math.round(x.self / total * 100) : 0;
-      var change = x.recentSelf > x.previousSelf ? '最近两周自主更多了' : (x.recentSelf < x.previousSelf ? '最近节奏有变化' : '正在稳定练习');
+      var change = x.recentSelf > x.previousSelf ? '最近两周记录到更多自主完成' : (x.recentSelf < x.previousSelf ? '最近节奏有变化' : '正在稳定练习');
       return '<div class="history-trend-row"><div class="history-trend-title"><strong>' + esc(TASKS[x.task][1]) + '</strong><span>自主 ' + x.self + ' · 提醒 ' + x.help + '</span></div>' +
         '<div class="history-trend-bar" aria-label="自主比例' + pct + '%"><span style="width:' + pct + '%"></span></div><small>' + change + '</small></div>';
     }).join('');
     if (!rows) rows = '<div class="history-empty">🌱 先从今天的一件小事开始，成长足迹会慢慢出现。</div>';
-    return '<section class="history-trends"><div class="history-section-title"><div><span class="history-kicker">最近 4 周</span><h3>我越来越会自己做主了吗？</h3></div></div>' +
+    return '<section class="history-trends"><div class="history-section-title"><div><span class="history-kicker">最近 4 周</span><h3>最近的练习是什么样？</h3></div></div>' +
       '<div class="history-summary"><span><strong>' + t.selfTotal + '</strong> 次自己想起来</span><span><strong>' + t.helpTotal + '</strong> 次提醒后完成</span><span><strong>' + t.activeDays + '</strong> 天留下记录</span></div>' +
       '<p class="history-gentle">' + trendMessage(t) + '</p><div class="history-trend-list">' + rows + '</div></section>';
   }
