@@ -7,8 +7,9 @@
 window.GROWTH_CLOUD = {
   envId: 'itonghao-d5gv3zqpl9f36e109',
 
-  // 云数据库里存孩子档案的集合名。改了这里，控制台也要建同名集合。
+  // PostgreSQL 表名。一个账号只允许一条孩子档案；成长数据只追加到事件表。
   profiles: 'profiles',
+  events: 'growth_events',
 
   // 保存后多久上传一次（毫秒）。孩子连续点按时会合并成一次上传。
   pushDelay: 1500,
