@@ -3,7 +3,7 @@
 // 注意：VERSION（growth-vXX）只是 Service Worker Cache Storage 命名空间，
 // 与 index.html 里的 ?v=xx（HTTP/CDN/浏览器缓存 busting）职责不同；
 // 两者互不相等没关系，但都只能向前递增，绝不复用历史版本号。
-const VERSION = 'growth-v15';
+const VERSION = 'growth-v16';
 
 // 核心预缓存文件：index.html 里带 ?v=xx 引用它们，fetch 时需要忽略 query 才能命中缓存。
 const CORE_FILES = ['index.html', 'styles.css', 'history.css', 'growth-events.js', 'app.js', 'history.js', 'config.js', 'auth.js'];

@@ -11,9 +11,9 @@ const DIST = path.join(ROOT, 'dist');
 
 // 核心静态资源 ?v= 版本：HTTP/CDN/浏览器缓存 busting。只能向前递增，绝不复用历史版本号
 // （v=13 曾发布过，回退会让旧缓存命中旧文件，新旧核心脚本混装）。当前指定版本。
-const APP_ASSET_V = 16;
+const APP_ASSET_V = 17;
 // Service Worker Cache Storage 命名空间（growth-vXX），与 ?v=xx 职责不同、不必相等，同样只递增。
-const SW_CACHE_V = 'growth-v15';
+const SW_CACHE_V = 'growth-v16';
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
 const EVENTS = require(path.join(DIST, 'growth-events.js'));
 const RealDate = Date;
@@ -690,6 +690,18 @@ async function swTests() {
     console.log('ok - verify-history ALL_PASS');
   } catch (e) {
     assert(false, 'verify-history.js 存在失败项');
+  }
+
+  console.log('\n== 安全回归 ==');
+  try {
+    execFileSync(
+      process.execPath,
+      [path.join(ROOT, 'scripts', 'verify-security.js')],
+      { stdio: 'inherit' }
+    );
+    console.log('ok - verify-security SECURITY_ALL_PASS');
+  } catch (e) {
+    assert(false, 'verify-security.js 存在失败项');
   }
 
   await localStoreTests();
