@@ -11,9 +11,9 @@ const DIST = path.join(ROOT, 'dist');
 
 // 核心静态资源 ?v= 版本：HTTP/CDN/浏览器缓存 busting。只能向前递增，绝不复用历史版本号
 // （v=13 曾发布过，回退会让旧缓存命中旧文件，新旧核心脚本混装）。当前指定版本。
-const APP_ASSET_V = 17;
+const APP_ASSET_V = 18;
 // Service Worker Cache Storage 命名空间（growth-vXX），与 ?v=xx 职责不同、不必相等，同样只递增。
-const SW_CACHE_V = 'growth-v16';
+const SW_CACHE_V = 'growth-v17';
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
 const EVENTS = require(path.join(DIST, 'growth-events.js'));
 const RealDate = Date;
@@ -180,7 +180,7 @@ function stubTests() {
   runCase({ seed: mkSeed({ stars: 7, counts: [1, 0, 0, 0, 0, 0] }) }, `
 parentOpen = true; parents();
 const html = document.getElementById('modal').innerHTML;
-assert(html.includes('记录保护') && html.includes('高级数据管理') && html.includes('backupData()'), '面板简化为记录保护与高级数据管理');
+assert(html.includes('云端同步') && html.includes('高级数据管理') && html.includes('backupData()'), '家长面板保留云端同步与高级数据管理入口');
 backupData();
 const data = JSON.parse(__blob.parts[0]);
 assert(data.version === 2 && data.state.stars === 7 && data.state.name === '测试宝宝', 'V2 记录文件内容完整');
@@ -352,7 +352,10 @@ async function localStoreTests() {
   assert(!('kids' in Cloud) && !('switchChild' in Cloud) && !('addChild' in Cloud), '多孩子档案 API 已移除');
 
   elements.cloudBox = mkEl(); Cloud.mount('cloudBox');
-  assert(elements.cloudBox.innerHTML.includes('记录保存在这台设备上'), '家长只看到简单的记录保护状态');
+  assert(elements.cloudBox.innerHTML.includes('尚未配置云端同步'), '未配置云端时家长看到明确的云端同步状态；不出现旧的“保护”措辞');
+  ['记录保护', '自动保护', '保护记录'].forEach(word => {
+    assert(!elements.cloudBox.innerHTML.includes(word), '家长面板不出现旧措辞「' + word + '」');
+  });
 }
 
 // ---------- 事件账本：文件基线恢复 + reducer 语义 ----------
@@ -567,6 +570,33 @@ async function cloudSyncTests() {
   assert(resD2 === 'ok', '场景 D 恢复后重传成功');
   const colD = fakeD.events[0] && fakeD.events[0].payload;
   assert(fakeD.events.length === 1 && ((colD.payload || colD).stars === 42), '重传后云端账本收到备份基线');
+
+  // 场景 E：验证码 UX——发送成功后面板内有可见反馈 + 60 秒重发倒计时，按钮禁用等倒计时
+  globalThis.__fakeE = makeFakeCloud({ events: [] });
+  globalThis.__fakeE.app.auth = () => ({
+    getLoginState: () => Promise.resolve(null),
+    getVerification: v => { globalThis.__lastVerification = v; return Promise.resolve({ verification: { vid: 'vid_e' } }); },
+    signOut: () => Promise.resolve({}),
+  });
+  await vm.runInThisContext('window.__seedStore(JSON.parse(localStorage.getItem("self-growth-v2")))');
+  const tE = await vm.runInThisContext('Cloud.__test(window.__fakeE.app, null)');
+  await vm.runInThisContext('Cloud.logout()');
+  await until(() => vm.runInThisContext('Cloud.status()') === 'login');
+  vm.runInThisContext('Cloud.mount("clBoxE")');
+  const boxE = document.getElementById('clBoxE');
+  assert(String(boxE.innerHTML).includes('获取验证码') && String(boxE.innerHTML).includes('id="clCodeStatus"'),
+    '登录面板提供获取验证码按钮与面板内状态节点');
+  const btnE = document.getElementById('clSendCode');
+  const msgE = document.getElementById('clCodeStatus');
+  document.getElementById('clPhone').value = '13800138000';
+  assert(!msgE.textContent, '发送前面板内无提示反馈');
+  await tE.sendCode();
+  await until(() => String(msgE.textContent).includes('验证码已发送到'));
+  assert(msgE.textContent.includes('验证码已发送到 138****8000'), '发送成功后面板内显示脱敏手机号反馈（clCodeStatus）');
+  assert(btnE.disabled === true, '发送成功后按钮 disabled（倒计时期间不可重发）');
+  assert(/重新发送（60s）/.test(String(btnE.textContent)), '按钮显示 60 秒重发倒计时');
+  const verE = globalThis.__lastVerification;
+  assert(verE && verE.phone_number === '+86 13800138000', '验证码请求使用 +86 前缀手机号');
 }
 
 // ---------- Service Worker：带 ?v=xx 的请求命中预缓存 + 导航断网兜底 ----------
@@ -588,6 +618,13 @@ async function swTests() {
   assert(vs.length && Math.min.apply(null, vs) >= APP_ASSET_V, 'index.html 资源 query 版本未回退/复用历史版本');
   const authSrc = fs.readFileSync(path.join(DIST, 'auth.js'), 'utf8');
   assert(authSrc.includes('cloudbase.esm.js?v=' + APP_ASSET_V), 'cloudbase.esm.js 使用 ?v=' + APP_ASSET_V);
+
+  // 家长区文案统一为「云端同步」表达（产品决策：不再使用“保护”系列措辞））
+  const appSrcFull = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
+  ['记录保护', '自动保护', '保护记录'].forEach(word => {
+    assert(!appSrcFull.includes(word) && !authSrc.includes(word), '家长区文案不再出现「' + word + '」');
+  });
+  assert(appSrcFull.includes('☁️ 云端同步'), '家长面板 section 标题为「☁️ 云端同步」');
 
   // 模拟 Cache API：预缓存键不带 query；ignoreSearch 按文件名匹配
   const entries = {
