@@ -1,42 +1,34 @@
 # Agent Handoff
 
 ## Task
-产品上线 CloudBase：静态托管部署 + 自定义域名 `today.itonghao.cn` 绑定，**已全部完成并验证通过**。
+重构家长入口为分层「家长中心」：首屏尽早说明不登录也能用、建议登录长期保存，并提供 PWA 安装引导；把孩子设置、奖励、技能、偏好和数据维护拆到二级模块。
 
 ## Current status
-- Status: done
-- Last agent: 小布
-- Branch: `main`
-- Related issue/PR: —
+- Status: ready for validation
+- Last agent: ChatGPT
+- Branch: `feat/parent-center-restructure`
+- Base: `main@d3a9bd6`
+- Related issue/PR: 待创建
 
-## Delivered
-- 正式入口 **https://today.itonghao.cn** 已生效：证书 `b01svyHU`（TrustAsia DV，90 天，至 2026-12-21）、
-  AccessType=DIRECT、Status=SUCCESS、DNSStatus=OK、路由 `/` → `STATIC_STORE`(staticstore)。
-- `dist/` 20 文件已部署到静态托管；全量探测 14 个关键资源**全部 200**，尺寸与默认域名一致，
-  `?v=18` 版本一致，`ssl_verify=0`（证书有效）。
-- 环境安全域名含 `today.itonghao.cn`；归属权 TXT `_cloudbase-challenge.today`（值 = envId）由用户配置。
-- 用户另有一张证书 `b010udZw` = `itonghao.cn` + `www.itonghao.cn`，与本站点无关，留作他用。
-- **表权限已收紧**（2026-09-22）：实测 ACL `growth_events → authenticated=ar`、`profiles → authenticated=arw`，
-  `anon` 已移除；RLS 策略（2 / 1）与 `growth_events_validate_v1` 触发器未受影响。
-  落库：新增 `cloud/migrations/2026-09-22-tighten-table-grants.sql`，并在 `cloud/schema-v3.sql` 的 GRANT 段后补了 REVOKE。
+## Implemented
+- 家长入口改名「家长中心」，移除齿轮式“设置页”心智。
+- 家长中心首屏新增：
+  - 「不登录也能用」local-first 说明；
+  - 云端同步登录区（无需 PIN）；
+  - PWA 安装/主屏幕引导（无需 PIN，按 standalone / 微信 / iOS / Android / beforeinstallprompt 动态展示）。
+- PIN `1234` 从总入口下沉到会修改内容的二级模块前，仍仅用于防误触。
+- 二级模块：孩子与成长 / 奖励规则 / 技能管理 / 使用偏好 / 记录与数据。
+- 登录后的退出账号移到受 PIN 保护的「记录与数据」。
+- 备份恢复规则保持：已绑定云端账号时不提供文件恢复。
+- 版本推进：资源 `?v=19`；Service Worker `growth-v18`；新增 `dist/pwa.js` 进入预缓存。
+- `scripts/verify.js` 已补家长中心结构、PIN 下沉、备份恢复回归用例。
 
-## Key facts / 踩坑
-- 自定义域名**必须走 `manageGateway`**：`manageHosting(action="bindDomain")` 已废弃，报
-  「静态托管域名不支持绑定，请通过 HTTP 访问服务绑定域名」。
-- 绑定顺序：`bindCustomDomain`（需 certificateId，且域名归属权 TXT 已就位）
-  → `createRoute`（`path=/`、上游 `STATIC_STORE`/`staticstore`、`enablePathTransmission=false`）
-  → 用户在 DNSPod 加 CNAME `today.itonghao.cn.tcbaccess.tencentcloudbase.com`。
-- 归属权校验只在**绑定那一刻**做一次；绑好后删掉 TXT 不影响已有绑定（但不建议删）。
-- 当前 MCP 登录身份只有 TCB 权限，`ssl:*` / `dnspod:*` 被拒 —— 证书申请与 DNS 改动只能用户做
-  （`ssl DescribeCertificates` 只读可调，可用来核对 CertId 对应哪个域名）。
-- 本机 DNS 被本地代理劫持（A 查询恒返回 fake-IP `198.18.1.1`），**A 记录不能从本机核实**；
-  TXT/CNAME 类查询仍可信。据此曾误判一次「`today` 下有旧 A 记录」。
+## Validation pending
+- `node --check` 与 `node scripts/verify.js` 待在分支代码上执行。
+- 通过后创建 PR，并根据结果决定是否合并。
 
-## Follow-ups
-- 免费证书 **2026-12-21 到期**，到期前重新申请并换绑（免费证书不支持续费）。
-- 手机端 PWA 实机自检待用户确认：四页面可用 / 家长面板 PIN `1234` / 完成挑战加分且不可重复 /
-  绑定测试手机号后云端同步成功（表权限收紧后，需再跑一次同步确认链路正常）。
-- `.agent-context/handoff.md` 与 `DEPLOY.md` 的变更尚未提交 git。
-
-## Version discipline
-本轮未改动 `dist/`，`?v=18` 与 `growth-v17` 保持不变。下次改 `dist/` 再各自递增并同步 `scripts/verify.js` 断言。
+## Product boundaries preserved
+- local-first；孩子无需登录；断网不阻断使用。
+- 一个家长账号只对应一个孩子。
+- 云端后台自动同步，不新增“立即同步”按钮。
+- PIN 仅防误触，不作为安全机制。
