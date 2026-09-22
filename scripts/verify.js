@@ -621,7 +621,7 @@ async function swTests() {
 
   // 资源 query 版本防回退/复用
   const idx = fs.readFileSync(path.join(DIST, 'index.html'), 'utf8');
-  for (const f of ['styles.css', 'growth-events.js', 'history.css', 'history.js', 'app.js', 'config.js', 'auth.js']) {
+  for (const f of ['styles.css', 'growth-events.js', 'pwa.js', 'history.css', 'history.js', 'app.js', 'config.js', 'auth.js']) {
     assert(idx.includes(f + '?v=' + APP_ASSET_V), f + ' 使用当前指定版本 ?v=' + APP_ASSET_V);
   }
   const vs = (idx.match(/v=(\d+)/g) || []).map(x => Number(x.slice(2)));
@@ -634,7 +634,7 @@ async function swTests() {
   ['记录保护', '自动保护', '保护记录'].forEach(word => {
     assert(!appSrcFull.includes(word) && !authSrc.includes(word), '家长区文案不再出现「' + word + '」');
   });
-  assert(appSrcFull.includes('☁️ 云端同步'), '家长面板 section 标题为「☁️ 云端同步」');
+  assert(appSrcFull.includes('家长中心') && appSrcFull.includes('不登录也能用') && appSrcFull.includes('长期保存成长记录'), '家长中心首屏表达 local-first、长期保存与云端同步价值');
 
   // 模拟 Cache API：预缓存键不带 query；ignoreSearch 按文件名匹配
   const entries = {
@@ -722,7 +722,7 @@ async function swTests() {
 // ---------- 主流程 ----------
 (async () => {
   console.log('== 语法检查 ==');
-  for (const f of ['growth-events.js', 'history.js', 'app.js', 'auth.js', 'config.js', 'sw.js']) {
+  for (const f of ['growth-events.js', 'history.js', 'pwa.js', 'app.js', 'auth.js', 'config.js', 'sw.js']) {
     try {
       execFileSync(process.execPath, ['--check', path.join(DIST, f)], { stdio: 'pipe' });
       console.log('ok - node --check dist/' + f);
