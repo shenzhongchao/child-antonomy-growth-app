@@ -18,8 +18,8 @@
 - 线上部署走腾讯云 **CloudBase 静态网站托管**（上传代码包），完整步骤见 `DEPLOY.md`。打包：`python scripts/pack-web.py` → `release/today-i-control-pwa.zip`（脚本会把 `dist/` 摊平到 ZIP 最外层并校验 `index.html` 在压缩包根目录——多套一层会 404）。控制台填：构建命令留空、构建产物目录 `.`、部署路径 `/`。
 - **绑定自定义域名必须完成 ICP 备案**（CloudBase 强制，未备案绑不上也访问不通）。用 CloudBase 环境当备案资源需同时满足：套餐个人版及以上 + 剩余有效期 ≥ 6 个月 + 已开启云托管固定 IP；管局审核 1–20 个工作日。HTTPS 需自行在 SSL 控制台申请免费 DV 证书再绑定；免费证书 **90 天**有效且不支持续费，到期需重新申请并换绑。
 - CloudBase 默认域名 `*.tcloudbaseapp.com` **仅供测试**：浏览器直开会先跳「访问提示中间页」，有访问频率限制，且可能因风控被封禁。不要在文档或配置里把它写成长期入口（这一点曾写错过，务必保持）。
-- PWA 三件套：`dist/manifest.json`、`dist/sw.js`、图标一律由 `python scripts/make-icons.py` 从 `assets/star-friend.png` 生成（含 maskable 安全区计算），不要手改图标。图标保持 PNG（iOS 的 apple-touch-icon 不认 WebP），插画才用 WebP。
-- Service Worker 只在 `https:` / `localhost` 下注册，注册代码内联在 `index.html` 末尾——`app.js` 里没有任何 PWA 相关代码，保持这样。
+- PWA 基础由 `dist/manifest.json`、`dist/sw.js` 和图标组成；`dist/pwa.js` 只负责面向家长的安装检测/引导（捕获 `beforeinstallprompt`、识别 standalone / iOS / 微信环境），不承载业务状态。图标一律由 `python scripts/make-icons.py` 从 `assets/star-friend.png` 生成（含 maskable 安全区计算），不要手改图标。图标保持 PNG（iOS 的 apple-touch-icon 不认 WebP），插画才用 WebP。
+- Service Worker 只在 `https:` / `localhost` 下注册，注册代码内联在 `index.html` 末尾。业务 `app.js` 不处理 Service Worker / 安装事件；安装逻辑集中在 `pwa.js`。
 - 版本号有两套、职责不同：`index.html` 资源引用与 `auth.js` 里的 `?v=xx`（含 `cloudbase.esm.js?v=xx`）是 **HTTP/CDN/浏览器缓存 busting**；`dist/sw.js` 的 `growth-vXX` 只是 **Service Worker Cache Storage 命名空间**（二者不必相等）。两套版本号都只能向前单调递增，**绝不复用历史版本号**——`?v=13` 曾真实发布过，若回退使用会让灰度设备的旧 HTTP/SW 缓存命中旧 app.js，造成新旧核心脚本混装。改 `dist/` 后：`?v` 加一 + `VERSION` 加一，缺一不可。
 - 导航请求为 network-first，但带 2.5s 超时回退缓存（`NAV_TIMEOUT_MS`）：弱网/断网时不会白屏干等。
 
@@ -56,7 +56,7 @@
   重新生成：临时目录 `npm i @cloudbase/js-sdk@<版本> esbuild`，入口文件写 `import cb from '@cloudbase/js-sdk'; export default cb;`，再 `esbuild --bundle --format=esm --minify --target=es2019`。生成后用 `grep -c '/npm/'` 确认结果为 0。
   它只在真正用到云端时才被动态 `import()` 加载（URL 带 `?v=` 防止 Service Worker 缓存旧版），不进首屏。
 - 它是平铺在 `dist/` 根目录的，因为 `scripts/pack-web.py` **只收顶层文件且禁止嵌套目录**（EdgeOne 要求 index.html 在压缩包最外层）。别把它挪进子目录，否则打不进 ZIP。
-- 家长面板只有「👧 孩子设置」和「🛡️ 记录保护」两个主要概念。手机号登录后自动同步，不提供“立即同步”按钮；文件导入导出收在「高级数据管理」。
+- 家长入口是分层的「家长中心」：首屏先说明“不登录也能用 / 建议登录长期保存 / 可安装到手机桌面”，登录与 PWA 指引不需要 PIN；会修改成长规则、奖励、技能、偏好或数据的二级模块才要求输入 `1234` 防误触。手机号登录后自动同步，不提供“立即同步”按钮；文件导入导出收在「记录与数据」。
 - 登录 API 用的是 `auth.getVerification({phone_number})` + `auth.signInWithSms({verificationInfo, verificationCode, phoneNum})`（手机号要带 `+86 ` 前缀）。控制台开通步骤、数据库安全规则见 `CLOUD.md`。
 - `cloud/phone-login/` 是**二期**小程序手机号登录的云函数脚手架，尚未联调。上小程序时要解决两端 uid 对齐问题（Web 短信登录 uid ≠ 自定义登录 uid），方案见 `CLOUD.md` 第五节。
 
