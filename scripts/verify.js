@@ -11,9 +11,9 @@ const DIST = path.join(ROOT, 'dist');
 
 // 核心静态资源 ?v= 版本：HTTP/CDN/浏览器缓存 busting。只能向前递增，绝不复用历史版本号
 // （v=13 曾发布过，回退会让旧缓存命中旧文件，新旧核心脚本混装）。当前指定版本。
-const APP_ASSET_V = 18;
+const APP_ASSET_V = 19;
 // Service Worker Cache Storage 命名空间（growth-vXX），与 ?v=xx 职责不同、不必相等，同样只递增。
-const SW_CACHE_V = 'growth-v17';
+const SW_CACHE_V = 'growth-v18';
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
 const EVENTS = require(path.join(DIST, 'growth-events.js'));
 const RealDate = Date;
@@ -176,11 +176,18 @@ function runCase(opts, testSrc) {
 
 // ---------- 桩测试用例 ----------
 function stubTests() {
-  console.log('\n== 桩测试：备份与恢复 ==');
-  runCase({ seed: mkSeed({ stars: 7, counts: [1, 0, 0, 0, 0, 0] }) }, `
-parentOpen = true; parents();
-const html = document.getElementById('modal').innerHTML;
-assert(html.includes('云端同步') && html.includes('高级数据管理') && html.includes('backupData()'), '家长面板保留云端同步与高级数据管理入口');
+  console.log('\n== 桩测试：家长中心与备份恢复 ==');
+  runCase({ seed: mkSeed({ stars: 7, counts: [1, 0, 0, 0, 0, 0] }) }, \`
+parentOpen = false; parents();
+let html = document.getElementById('modal').innerHTML;
+assert(html.includes('不登录也能用') && html.includes('cloudBox') && html.includes('pwaBox'), '家长中心首屏先说明无需登录、云端同步与桌面安装');
+assert(html.includes('孩子与成长') && html.includes('奖励规则') && html.includes('技能管理') && html.includes('记录与数据'), '家长中心按任务分模块展示');
+assert(!html.includes('kidName') && !html.includes('backupData()'), '家长中心首页不堆叠具体设置表单与高级数据操作');
+openParentSection('child');
+assert(document.getElementById('modal').innerHTML.includes('请家长确认') && document.getElementById('modal').innerHTML.includes('1234'), '修改成长规则前才要求家长确认');
+parentOpen = true; openParentSection('data');
+html = document.getElementById('modal').innerHTML;
+assert(html.includes('导出记录文件') && html.includes('backupData()') && html.includes('restoreFile'), '记录与数据二级页提供备份与未登录恢复');
 backupData();
 const data = JSON.parse(__blob.parts[0]);
 assert(data.version === 2 && data.state.stars === 7 && data.state.name === '测试宝宝', 'V2 记录文件内容完整');
@@ -192,15 +199,15 @@ restoreData({ files: [{ content: 'not json{{' }], value: 'x' });
 assert(s.stars === 42 && document.getElementById('notice').innerHTML.includes('无法识别'), '非法 JSON 被拒绝且不动数据');
 restoreData({ files: [{ content: JSON.stringify({ stars: 'abc' }) }], value: 'x' });
 assert(s.stars === 42, '结构不符的备份被拒绝');
-growthStore.userId = 'u_bound'; parents();
-assert(!document.getElementById('modal').innerHTML.includes('restoreFile'), '绑定账号后隐藏文件恢复，避免重置云端账本');
+growthStore.userId = 'u_bound'; parentData();
+assert(!document.getElementById('modal').innerHTML.includes('restoreFile') && document.getElementById('modal').innerHTML.includes('退出家长账号'), '绑定账号后隐藏文件恢复并提供受 PIN 保护的退出入口');
 restoreData({ files: [{ content: JSON.stringify({ version: 2, state: blank() }) }], value: 'x' });
 assert(s.stars === 42, '绑定账号后文件恢复不生效');
 parentOpen = false;
 const before = JSON.stringify(s);
 backupData(); restoreData({ files: [{ content: '{}' }], value: 'x' });
 assert(JSON.stringify(s) === before, '未过家长验证时备份/恢复不生效');
-`);
+\`);
 
   console.log('\n== 桩测试：徽章升级庆祝 ==');
   runCase({ seed: mkSeed({ stars: 10, counts: [2, 0, 9], days: daySeed({ selected: [0, 1, 2] }) }) }, `
