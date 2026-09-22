@@ -1,0 +1,16 @@
+name: temp-parent-center-verify
+on:
+  push:
+    branches:
+      - feat/parent-center-restructure
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: node scripts/verify.js
