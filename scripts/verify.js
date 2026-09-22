@@ -591,8 +591,11 @@ async function cloudSyncTests() {
   await until(() => vm.runInThisContext('Cloud.status()') === 'login');
   vm.runInThisContext('Cloud.mount("clBoxE")');
   const boxE = document.getElementById('clBoxE');
+  assert(String(boxE.innerHTML).includes('登录并开启云端同步') && !String(boxE.innerHTML).includes('id="clPhone"'),
+    '登录面板默认折叠手机号表单，先展示明确 CTA');
+  vm.runInThisContext('Cloud.showLogin()');
   assert(String(boxE.innerHTML).includes('获取验证码') && String(boxE.innerHTML).includes('id="clCodeStatus"'),
-    '登录面板提供获取验证码按钮与面板内状态节点');
+    '点击登录 CTA 后展开获取验证码按钮与面板内状态节点');
   const btnE = document.getElementById('clSendCode');
   const msgE = document.getElementById('clCodeStatus');
   document.getElementById('clPhone').value = '13800138000';
