@@ -38,6 +38,20 @@ GRANT USAGE, SELECT ON ALL SEQUENCES IN SCHEMA public TO authenticated;
 GRANT ALL ON public.profiles, public.growth_events TO service_role;
 GRANT ALL ON ALL SEQUENCES IN SCHEMA public TO service_role;
 
+-- 收紧表权限（与 migrations/2026-09-22-tighten-table-grants.sql 等价）。
+-- ⚠️ 必须显式 REVOKE：平台建表时默认已把新表授权给 anon / authenticated 为全权限，
+-- 而 GRANT 只能加权限、不能减权限，只写上面几行 GRANT 是收不回多余权限的。
+-- 不收回的话 authenticated 会拿到 UPDATE / DELETE / TRUNCATE，
+-- 其中 TRUNCATE 不受 RLS 管控，等于留了个绕过行级约束清空整表的口子。
+REVOKE UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+  ON public.growth_events FROM authenticated, anon;
+REVOKE DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+  ON public.profiles FROM authenticated, anon;
+REVOKE SELECT ON public.profiles FROM anon;
+-- 再声明一次最终态，与上面的 GRANT 幂等叠加
+GRANT SELECT, INSERT ON public.growth_events TO authenticated;
+GRANT SELECT, INSERT, UPDATE ON public.profiles TO authenticated;
+
 ALTER TABLE public.profiles ENABLE ROW LEVEL SECURITY;
 ALTER TABLE public.growth_events ENABLE ROW LEVEL SECURITY;
 
