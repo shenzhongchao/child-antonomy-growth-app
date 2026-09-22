@@ -9,7 +9,7 @@
   var _app = null, _auth = null, _db = null, _sdk = null;
   var _uid = null, _phone = '', _verification = null;
   var _status = 'off', _error = '', _mount = null, _timer = null, _busy = false;
-  var _codeSending = false, _codeUntil = 0, _codeTimer = null, _codeMessage = '';
+  var _codeSending = false, _codeUntil = 0, _codeTimer = null, _codeMessage = '', _loginExpanded = false;
 
   function conf() { return window.GROWTH_CLOUD || {}; }
   function store() { return window.GrowthStore && GrowthStore.read ? GrowthStore.read() : null; }
@@ -206,20 +206,27 @@
     if (_status === 'off') {
       h += '<p class="sub">云端同步尚未配置。孩子可以正常使用，但清理浏览器数据后无法从云端恢复记录。</p>';
     } else if (!_uid) {
-      h += '<p class="sub">绑定家长手机号后，记录会自动同步到云端；换设备登录同一手机号，也能恢复记录。孩子不用登录。</p>' +
-        '<label>家长手机号<input id="clPhone" inputmode="numeric" maxlength="11" autocomplete="tel" placeholder="13800138000" value="' + esc(_phone) + '"></label>' +
-        '<label>短信验证码<input id="clCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位数字"></label>' +
-        '<button id="clSendCode" class="secondary" onclick="Cloud.sendCode()" ' + ((_codeSending || left > 0) ? 'disabled' : '') + '>' + codeLabel + '</button> ' +
-        '<button class="primary" onclick="Cloud.login()">开启云端同步</button>' +
-        '<p class="sub" id="clCodeStatus" role="status" aria-live="polite" ' + (_codeMessage ? '' : 'hidden') + '>' + esc(_codeMessage) + '</p>';
+      h += '<p class="sub">绑定家长手机号后，记录会自动同步到云端；换设备登录同一手机号，也能恢复记录。孩子不用登录。</p>';
+      if (!_loginExpanded) {
+        h += '<button class="primary" onclick="Cloud.showLogin()">登录并开启云端同步</button>';
+      } else {
+        h += '<label>家长手机号<input id="clPhone" inputmode="numeric" maxlength="11" autocomplete="tel" placeholder="13800138000" value="' + esc(_phone) + '"></label>' +
+          '<label>短信验证码<input id="clCode" inputmode="numeric" maxlength="6" autocomplete="one-time-code" placeholder="6 位数字"></label>' +
+          '<button id="clSendCode" class="secondary" onclick="Cloud.sendCode()" ' + ((_codeSending || left > 0) ? 'disabled' : '') + '>' + codeLabel + '</button> ' +
+          '<button class="primary" onclick="Cloud.login()">开启云端同步</button>' +
+          '<button class="link" onclick="Cloud.hideLogin()">暂时不用</button>' +
+          '<p class="sub" id="clCodeStatus" role="status" aria-live="polite" ' + (_codeMessage ? '' : 'hidden') + '>' + esc(_codeMessage) + '</p>';
+      }
     } else {
       if (_status === 'error') h += '<p class="sub">' + esc(_error) + '</p>';
-      h += '<p class="sub">记录会在后台自动同步到云端，无需手动操作。</p><button class="link" onclick="Cloud.logout()">退出家长账号</button>';
+      h += '<p class="sub">记录会在后台自动同步到云端，无需手动操作。退出账号请到「记录与数据」。</p>';
     }
     el.innerHTML = h;
   }
   function render() { cloudBox(); }
   function mount(id) { _mount = id; render(); }
+  function showLogin() { _loginExpanded = true; render(); }
+  function hideLogin() { _loginExpanded = false; _codeMessage = ''; render(); }
 
   function boot() {
     if (!configured()) { _status = 'off'; render(); return; }
@@ -262,7 +269,7 @@
   }
   function logout() {
     var done = _auth && _auth.signOut ? _auth.signOut().catch(function () {}) : Promise.resolve();
-    done.then(function () { _uid = null; _status = 'login'; render(); notify('已退出云端同步账号，记录仍保存在本机'); });
+    done.then(function () { _uid = null; _status = 'login'; _loginExpanded = false; render(); notify('已退出云端同步账号，记录仍保存在本机'); });
   }
   function markDirty() {
     if (!configured() || !_uid) return;
@@ -271,7 +278,7 @@
   }
 
   window.Cloud = {
-    boot: boot, mount: mount, sendCode: sendCode, login: login, logout: logout,
+    boot: boot, mount: mount, showLogin: showLogin, hideLogin: hideLogin, sendCode: sendCode, login: login, logout: logout,
     syncNow: function () { return syncNow(); }, markDirty: markDirty,
     configured: configured, status: function () { return _status; },
     __test: function (app, uid) {
