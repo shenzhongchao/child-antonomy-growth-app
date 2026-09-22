@@ -3,10 +3,10 @@
 // 注意：VERSION（growth-vXX）只是 Service Worker Cache Storage 命名空间，
 // 与 index.html 里的 ?v=xx（HTTP/CDN/浏览器缓存 busting）职责不同；
 // 两者互不相等没关系，但都只能向前递增，绝不复用历史版本号。
-const VERSION = 'growth-v17';
+const VERSION = 'growth-v18';
 
 // 核心预缓存文件：index.html 里带 ?v=xx 引用它们，fetch 时需要忽略 query 才能命中缓存。
-const CORE_FILES = ['index.html', 'styles.css', 'history.css', 'growth-events.js', 'app.js', 'history.js', 'config.js', 'auth.js'];
+const CORE_FILES = ['index.html', 'styles.css', 'history.css', 'growth-events.js', 'pwa.js', 'app.js', 'history.js', 'config.js', 'auth.js'];
 
 // 页面导航等网络的上限：超过这个时间就用本地缓存顶上，避免弱网/断网时白屏干等。
 const NAV_TIMEOUT_MS = 2500;
@@ -18,6 +18,7 @@ const CORE = [
   './styles.css',
   './history.css',
   './growth-events.js',
+  './pwa.js',
   './app.js',
   './history.js',
   './config.js',
