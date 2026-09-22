@@ -3,6 +3,9 @@ on:
   push:
     branches:
       - feat/parent-center-restructure
+  pull_request:
+    branches:
+      - main
 
 jobs:
   verify:
