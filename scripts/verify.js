@@ -177,7 +177,7 @@ function runCase(opts, testSrc) {
 // ---------- 桩测试用例 ----------
 function stubTests() {
   console.log('\n== 桩测试：家长中心与备份恢复 ==');
-  runCase({ seed: mkSeed({ stars: 7, counts: [1, 0, 0, 0, 0, 0] }) }, \`
+  runCase({ seed: mkSeed({ stars: 7, counts: [1, 0, 0, 0, 0, 0] }) }, `
 parentOpen = false; parents();
 let html = document.getElementById('modal').innerHTML;
 assert(html.includes('不登录也能用') && html.includes('cloudBox') && html.includes('pwaBox'), '家长中心首屏先说明无需登录、云端同步与桌面安装');
@@ -207,7 +207,7 @@ parentOpen = false;
 const before = JSON.stringify(s);
 backupData(); restoreData({ files: [{ content: '{}' }], value: 'x' });
 assert(JSON.stringify(s) === before, '未过家长验证时备份/恢复不生效');
-\`);
+`);
 
   console.log('\n== 桩测试：徽章升级庆祝 ==');
   runCase({ seed: mkSeed({ stars: 10, counts: [2, 0, 9], days: daySeed({ selected: [0, 1, 2] }) }) }, `
