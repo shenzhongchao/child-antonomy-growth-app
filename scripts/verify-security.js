@@ -47,6 +47,32 @@ assert(forged.stars === 0 && Object.keys(forged.days).length === 0, 'replay 忽�
 const clean = E.replay([{ id: 'x', type: 'task.done', day: '2026-09-15', task: 0, mode: 'self' }]);
 assert(clean.stars === 1 && clean.counts[0] === 1, '合法事件语义保持');
 
+// 小心愿事件边界：与云端 trigger 白名单同口径
+assert(E.validEvent({ id: 'p1', type: 'wish.propose', day: '2026-10-12', kind: 'task', title: '自己叠被子', desc: '' }), '合法 wish.propose 通过');
+assert(!E.validEvent({ id: 'p2', type: 'wish.propose', day: '2026-10-12', kind: 'other', title: 'x', desc: '' }), '非法 kind 的 wish.propose 被拒绝');
+assert(!E.validEvent({ id: 'p3', type: 'wish.propose', day: '2026-10-12', kind: 'task', title: 'x'.repeat(17), desc: '' }), '超长标题的 wish.propose 被拒绝');
+assert(!E.validEvent({ id: 'p4', type: 'wish.propose', day: '2026-10-12', kind: 'task', title: 'x', desc: 'x'.repeat(25) }), '超长说明的 wish.propose 被拒绝');
+assert(E.validEvent({ type: 'wish.decide', day: '2026-10-12', wishId: 'w_p1', approve: true, price: 10 }), '合法 wish.decide 通过');
+assert(!E.validEvent({ type: 'wish.decide', day: '2026-10-12', wishId: 'w_p1', approve: true, price: 100 }), '价格越界的 wish.decide 被拒绝');
+assert(E.validEvent({ type: 'custom.done', day: '2026-10-12', task: 'w_p1', mode: 'self' }), '合法 custom.done 通过');
+assert(!E.validEvent({ type: 'custom.done', day: '2026-10-12', task: 'plain', mode: 'self' }), '无 w_ 前缀的 custom.done 被拒绝');
+assert(!E.validEvent({ type: 'reward.custom.redeem', day: '2026-10-12', reward: 'w_p1', cost: 0 }), '零成本 reward.custom.redeem 被拒绝');
+assert(!E.validEvent({ type: 'wish.retire', wishId: 'w_p1', on: 'yes' }), '非布尔 on 的 wish.retire 被拒绝');
+const wishForged = E.replay([{ id: 'f1', type: 'custom.done', day: '2026-10-12', task: 'w_fake', mode: 'self' }]);
+assert(wishForged.stars === 0 && Object.keys(wishForged.days).length === 0, 'replay 忽略指向不存在愿望的 custom.done');
+
+const wishMigration = fs.readFileSync(path.join(__dirname, '..', 'cloud', 'migrations', '2026-10-12-wish-pool.sql'), 'utf8');
+assert(wishMigration.includes('CREATE OR REPLACE FUNCTION public.validate_growth_event_v1'), '小心愿迁移替换同名校验函数（可重复执行）');
+['wish.propose', 'wish.decide', 'custom.done', 'reward.custom.redeem', 'wish.retire'].forEach(t => {
+  assert(wishMigration.includes("'" + t + "'"), '云端白名单包含 ' + t);
+});
+assert(!wishMigration.includes('DROP TABLE') && !wishMigration.includes('DROP TRIGGER'), '小心愿迁移不 DROP 任何对象');
+const schemaV3 = fs.readFileSync(path.join(__dirname, '..', 'cloud', 'schema-v3.sql'), 'utf8');
+['wish.propose', 'wish.decide', 'custom.done', 'reward.custom.redeem', 'wish.retire'].forEach(t => {
+  assert(schemaV3.includes("'" + t + "'"), 'schema-v3（全新环境）与迁移同步包含 ' + t);
+});
+assert(schemaV3.includes('^w_.{1,198}$') && wishMigration.includes('^w_.{1,198}$'), '云端导入校验允许 w_ 前缀的自定义奖励券 id');
+
 const migration = fs.readFileSync(path.join(__dirname, '..', 'cloud', 'migrations', '2026-09-15-security-hardening.sql'), 'utf8');
 assert(migration.includes('pg_advisory_xact_lock'), '数据库迁移对同一 profile 写入加事务级 advisory lock');
 assert(migration.includes("state.import is only allowed as the first profile event"), '数据库限制 state.import 只能作为首条事件');

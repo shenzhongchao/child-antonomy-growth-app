@@ -39,6 +39,7 @@
       planned: !!day.planned,
       mood: typeof day.mood === 'number' ? day.mood : null,
       note: typeof day.note === 'string' ? day.note : '',
+      customDone: day.customDone && typeof day.customDone === 'object' ? day.customDone : {},
     };
   }
   function validTask(n) { return Number.isInteger(n) && n >= 0 && n < TASKS.length; }
@@ -46,6 +47,11 @@
   function daySummary(state, key) {
     state = state || {};
     var day = copyDay(state.days && state.days[key]);
+    var wishTitle = function (id) {
+      var ws = Array.isArray(state.wishes) ? state.wishes : [];
+      for (var i = 0; i < ws.length; i++) if (ws[i] && ws[i].id === id) return ws[i].title;
+      return '我的专属练习';
+    };
     var done = [];
     Object.keys(day.done).map(Number).filter(validTask).sort(function (a, b) { return a - b; }).forEach(function (task) {
       done.push({ task: task, mode: day.done[task] === 'self' ? 'self' : 'help' });
@@ -53,15 +59,27 @@
     var selected = day.selected.map(Number).filter(validTask);
     done.forEach(function (x) { if (selected.indexOf(x.task) < 0) selected.push(x.task); });
     selected = selected.slice(0, 3);
-    var rewardList = (Array.isArray(state.rewards) ? state.rewards : []).filter(function (r) { return r && String(r.date || '') === key; });
-    var selfCount = done.filter(function (x) { return x.mode === 'self'; }).length;
-    var helpCount = done.length - selfCount;
-    var recorded = selected.length > 0 || done.length > 0 || day.planned || day.mood !== null || !!day.note.trim() || rewardList.length > 0;
+    var custom = [];
+    Object.keys(day.customDone).forEach(function (id) {
+      custom.push({ id: id, title: wishTitle(id), mode: day.customDone[id] === 'self' ? 'self' : 'help' });
+    });
+    day.selected.forEach(function (x) {
+      if (typeof x === 'string' && x.slice(0, 2) === 'w_' && !custom.some(function (c) { return c.id === x; })) custom.push({ id: x, title: wishTitle(x), mode: null });
+    });
+    var rewardList = (Array.isArray(state.rewards) ? state.rewards : []).filter(function (r) { return r && String(r.date || '') === key; })
+      .map(function (r) {
+        var label = typeof r.id === 'string' ? wishTitle(r.id) : (REWARD_NAMES[Number(r.id)] || '一张奖励券');
+        return { id: r.id, used: !!r.used, label: label };
+      });
+    var selfCount = done.filter(function (x) { return x.mode === 'self'; }).length + custom.filter(function (x) { return x.mode === 'self'; }).length;
+    var helpCount = done.filter(function (x) { return x.mode === 'help'; }).length + custom.filter(function (x) { return x.mode === 'help'; }).length;
+    var recorded = selected.length > 0 || done.length > 0 || custom.length > 0 || day.planned || day.mood !== null || !!day.note.trim() || rewardList.length > 0;
     return {
       key: key,
       recorded: recorded,
       selected: selected,
       done: done,
+      custom: custom,
       selfCount: selfCount,
       helpCount: helpCount,
       starsEarned: selfCount,
@@ -93,6 +111,7 @@
     span = Math.max(1, Number(span) || 28);
     endDate = endDate instanceof Date ? new Date(endDate.getFullYear(), endDate.getMonth(), endDate.getDate()) : new Date();
     var taskStats = TASKS.map(function (_, task) { return { task: task, self: 0, help: 0, recentSelf: 0, previousSelf: 0 }; });
+    var customStat = { task: 'custom', self: 0, help: 0, recentSelf: 0, previousSelf: 0 };
     var activeDays = 0, selfTotal = 0, helpTotal = 0;
     var half = Math.floor(span / 2);
     for (var i = span - 1; i >= 0; i--) {
@@ -106,8 +125,15 @@
           if (i < half) stat.recentSelf++; else stat.previousSelf++;
         } else { stat.help++; helpTotal++; }
       });
+      sum.custom.forEach(function (x) {
+        if (!x.mode) return;
+        if (x.mode === 'self') {
+          customStat.self++; selfTotal++;
+          if (i < half) customStat.recentSelf++; else customStat.previousSelf++;
+        } else { customStat.help++; helpTotal++; }
+      });
     }
-    return { span: span, activeDays: activeDays, selfTotal: selfTotal, helpTotal: helpTotal, tasks: taskStats };
+    return { span: span, activeDays: activeDays, selfTotal: selfTotal, helpTotal: helpTotal, tasks: taskStats.concat([customStat]) };
   }
 
   function currentState() {
@@ -180,7 +206,7 @@
       var total = x.self + x.help;
       var pct = total ? Math.round(x.self / total * 100) : 0;
       var change = x.recentSelf > x.previousSelf ? '最近两周记录到更多自主完成' : (x.recentSelf < x.previousSelf ? '最近节奏有变化' : '正在稳定练习');
-      return '<div class="history-trend-row"><div class="history-trend-title"><strong>' + esc(TASKS[x.task][1]) + '</strong><span>自主 ' + x.self + ' · 提醒 ' + x.help + '</span></div>' +
+      return '<div class="history-trend-row"><div class="history-trend-title"><strong>' + (x.task === 'custom' ? '我的专属练习' : esc(TASKS[x.task][1])) + '</strong><span>自主 ' + x.self + ' · 提醒 ' + x.help + '</span></div>' +
         '<div class="history-trend-bar" aria-label="自主比例' + pct + '%"><span style="width:' + pct + '%"></span></div><small>' + change + '</small></div>';
     }).join('');
     if (!rows) rows = '<div class="history-empty">🌱 先从今天的一件小事开始，成长足迹会慢慢出现。</div>';
@@ -227,11 +253,15 @@
       var status = mode === 'self' ? '<span class="history-status self">★ 自己想起来的</span>' : (mode === 'help' ? '<span class="history-status help">● 提醒后完成</span>' : '<span class="history-status pending">○ 选了这个挑战</span>');
       return '<div class="history-detail-task"><span class="history-task-no">' + (task + 1) + '</span><div><strong>' + esc(TASKS[task][0]) + '</strong><small>' + esc(TASKS[task][1]) + '</small></div>' + status + '</div>';
     }).join('');
+    tasksHtml += sum.custom.map(function (c) {
+      var status = c.mode === 'self' ? '<span class="history-status self">★ 自己想起来的</span>' : (c.mode === 'help' ? '<span class="history-status help">● 提醒后完成</span>' : '<span class="history-status pending">○ 选了这个挑战</span>');
+      return '<div class="history-detail-task"><span class="history-task-no">✨</span><div><strong>' + esc(c.title) + '</strong><small>我的专属练习</small></div>' + status + '</div>';
+    }).join('');
     if (!tasksHtml) tasksHtml = '<p class="history-gentle">这天没有挑战记录。</p>';
     var plan = sum.planned && sum.plan.length ? '<section class="history-detail-block"><h3>🗓️ 我的一天</h3><div class="history-plan">' + sum.plan.map(esc).join('<span aria-hidden="true">→</span>') + '</div></section>' : '';
     var mood = sum.mood !== null && MOODS[sum.mood] ? '<section class="history-detail-block"><h3>今天的心情</h3><p class="history-mood">' + MOODS[sum.mood] + '</p></section>' : '';
     var note = sum.note.trim() ? '<section class="history-detail-block"><h3>💌 给你的一句话</h3><p>' + esc(sum.note) + '</p></section>' : '';
-    var rewardHtml = sum.rewards.length ? '<section class="history-detail-block"><h3>🎁 当天兑换</h3><div class="history-reward-list">' + sum.rewards.map(function (r) { return '<span>' + esc(REWARD_NAMES[Number(r.id)] || '一张奖励券') + (r.used ? ' · 已兑现' : ' · 等待兑现') + '</span>'; }).join('') + '</div></section>' : '';
+    var rewardHtml = sum.rewards.length ? '<section class="history-detail-block"><h3>🎁 当天兑换</h3><div class="history-reward-list">' + sum.rewards.map(function (r) { return '<span>' + esc(r.label || '一张奖励券') + (r.used ? ' · 已兑现' : ' · 等待兑现') + '</span>'; }).join('') + '</div></section>' : '';
     var html = '<div class="history-shell history-detail"><button class="history-back" onclick="GrowthHistory.renderPanel()">← 回到成长足迹</button><div class="history-detail-head"><span class="history-kicker">' + esc(fmtDate(key)) + '</span><h2>这一天，我做到了什么？</h2><div class="history-day-score"><span>★ ' + sum.starsEarned + ' 颗星</span><span>自主 ' + sum.selfCount + '</span><span>提醒 ' + sum.helpCount + '</span></div></div><section class="history-detail-block"><h3>🎯 我的小挑战</h3><div class="history-detail-tasks">' + tasksHtml + '</div></section>' + plan + mood + note + rewardHtml + '<p class="history-footnote">回头看看，是为了发现自己的变化，不是给过去打分。</p></div>';
     show(html);
   }

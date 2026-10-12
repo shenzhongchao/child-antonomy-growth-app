@@ -1,54 +1,33 @@
 # Agent Handoff
 
 ## Task
-重构家长入口为分层「家长中心」：首屏尽早说明不登录也能用、建议登录长期保存，并提供 PWA 安装引导；把孩子设置、奖励、技能、偏好和数据维护拆到二级模块。
-**该功能已合并进 `main` 并部署上线。**
+新功能「小心愿」（愿望池 + 孩子发起任务）：孩子可主动提议想要的奖励 / 想挑战的事，家长在 PIN 保护的「💌 小心愿」模块审批、定价后上架。方案：`docs/feature-wish-pool.md`。
 
 ## Current status
-- Status: done
+- Status: in_progress（代码全部完成并回归通过；**尚未提交 git、未执行云端 migration、未部署**）
 - Last agent: 小布
-- Branch: `main`（功能分支 `feat/parent-center-restructure` 已合入）
-- Merge commit: `9a887e8`
-- Base 之前: `d3a9bd6`
+- Branch: `main`（工作区有未提交改动）
 
-## Delivered
-- 家长入口改名为「家长中心」，去掉齿轮式“设置页”心智。
-- 家长中心首屏优先说明：不登录也能用（记录保存在当前设备）；建议登录并开启云端同步以长期保存/换设备恢复；孩子无需登录，断网仍可用。
-- 云端同步登录默认只展示「登录并开启云端同步」CTA，点击后才展开手机号 / 验证码表单。
-- 新增 `dist/pwa.js`：按 standalone / 微信 / iOS / Android / `beforeinstallprompt` 动态展示安装到手机桌面的指引。
-- PIN `1234` 从家长总入口下沉到会修改内容的二级模块前，仍仅用于防误触。
-- 二级模块拆分为：孩子与成长 / 奖励规则 / 技能管理 / 使用偏好 / 记录与数据。
-- 退出家长账号移入受 PIN 保护的「记录与数据」；已绑定云端账号时继续隐藏文件恢复。
-- `scripts/verify.js` 新增家长中心层级、PIN 下沉、折叠登录、PWA 资源版本与既有备份恢复的回归覆盖。
-- 资源版本推进为 `?v=19`；Service Worker Cache Storage 推进为 `growth-v18`，并预缓存 `pwa.js`。
-- 更新 `AGENTS.md` 的家长中心和 PWA 架构说明。
+## 已交付
+- PR1（事件层）：`dist/growth-events.js` 新增 wishes/customCounts/day.customDone + 5 个新事件（wish.propose / wish.decide / custom.done / reward.custom.redeem / wish.retire）；`cloud/migrations/2026-10-12-wish-pool.sql` + `schema-v3.sql` 同步（函数体已 diff 确认一致）。
+- PR2（UI）：
+  - 孩子侧：奖励屋「我的小心愿」区块 + 两步许愿 modal；选挑战弹窗接入已批准自定义挑战（标「我自己想练的」）；自定义奖励卡片进奖励屋网格；完成流程复用二选一（self +1 星）；成长页「我的专属练习」区块（只显示累计次数，无徽章/进度条）。
+  - 家长侧：家长中心首屏待审批提示（无需 PIN）+「💌 小心愿」PIN 模块（批准/定价/婉拒/下架/重新上架）；奖励规则页兼容自定义券名称。
+  - `pick` 事件扩展：`selected` 允许数字 0–5 与 `w_` 字符串混合（events + 云端 trigger 同步）。
+  - `dist/history.js`：daySummary/trend/openDay 计入 customDone，趋势聚合「我的专属练习」行，自定义券显示愿望标题；措辞遵守只陈述口径。
+  - `dist/styles.css` 追加小心愿相关样式（.custom-art/.choice-tag/.parent-wish-row 等，含夜间模式）。
+- 回归：verify.js 新增小心愿 UI 桩测试 + 事件层 16 组用例；verify-history.js / verify-security.js 同步扩展。`node scripts/verify.js` ALL_PASS（239 项 ok）。
+- 版本：资源 `?v=21`，SW `growth-v20`；打包 `release/today-i-control-pwa.zip` 正常（index.html 在根）。
+- 文档：AGENTS.md（事件账本节）、CLOUD.md（事件合并规则节）、`docs/pwa-device-checklist.md`（新增 5.5 小心愿实机清单）、feature-wish-pool.md 状态更新。
 
-## Validation
-- `node scripts/verify.js`：**ALL_PASS**（208 行，含 verify-history / verify-security）。
-- 核心 JS `node --check`：PASS（含新增 `pwa.js`）。
-- 打包 `python scripts/pack-web.py`：`release/today-i-control-pwa.zip` 21 文件 / 1,170,387 B，`index.html` 在根。
+## Next steps（部署顺序，勿颠倒）
+1. 提交 git（建议一个 commit 或按 PR1/PR2 两个）。
+2. 在 CloudBase 生产库执行 `cloud/migrations/2026-10-12-wish-pool.sql`（可重复执行，不 DROP 任何对象）——**必须先于 dist 上传**，否则新事件被服务端拒收。
+3. 上传 dist（MCP manageHosting 或 pack-web.zip），线上复核 ?v=21 / growth-v20 与关键资源字节数。
+4. 手机端实机自检：`docs/pwa-device-checklist.md` 第 5.5 节。
+5. 沿用提醒：SSL 证书 2026-12-21 到期需换绑。
 
-## Deployment（2026-09-22 20:05）
-- 部署方式：MCP `manageHosting(action="upload", localPath=dist, cloudPath="/")`。
-  ⚠️ 其返回 `totalFiles: 1` 是误导字段，实际用 `queryHosting(action="listFiles")` 复核确认 **21 个文件全部到位**（时间戳 12:05:42Z）。
-- 线上 `https://today.itonghao.cn` 核对：11 个关键资源本地/线上字节数逐一对上
-  （app.js 37265 / styles.css 40201 / index.html 2097 / pwa.js 3061 / sw.js 3874）；
-  `index.html` 内 `?v=19` × 8、`?v=18` × 0；含「家长中心」与 `pwa.js?v=19`；
-  `sw.js` = `growth-v18` 且预缓存含 `./pwa.js`。
-
-## Product boundaries preserved
-- local-first；孩子无需登录；断网不阻断使用。
-- 一个家长账号只对应一个孩子。
-- 云端后台自动同步，不新增“立即同步”按钮。
-- PIN 仅防误触，不作为安全机制。
-
-## Follow-ups
-- 手机端 PWA 实机自检待用户执行，清单已备好：`docs/pwa-device-checklist.md`（四页面 / 家长中心分层与 PIN 下沉 / 安装引导 iOS+Android / 完成挑战防重复 / 云同步 / 离线弱网 / 成长足迹边界）。
-- 免费 SSL 证书 `b01svyHU` **2026-12-21 到期**，届时重新申请并换绑。
-- 远端分支 `feat/parent-center-restructure` 已删除（2026-10-12）；同日确认其余旧功能分支均为 squash 合入（成长足迹 `be7670d`、安全加固 `635f30f`、云同步 UX `45c4872`、移除桌面版 `de577c5`），已清理 `feature/growth-history-v1`、`offline`、`security/hardening-v1`、`ux/cloud-sync-feedback`，现仅余 `main`。
-
-## Version discipline
-后续只要修改 `dist/` 中任何 HTML/CSS/JS：
-- 资源 query 必须从 `?v=19` 继续递增，绝不复用历史版本号；
-- `dist/sw.js` 的 `VERSION` 必须从 `growth-v18` 继续递增；
-- 同步更新 `scripts/verify.js` 中版本断言。
+## 产品边界（本次保持不变）
+- local-first；孩子无需登录；历史只读；PIN 仅防误触；一个家长账号只对应一个孩子。
+- 自定义挑战无徽章等级，只做次数陈述；愿望不产生打卡/排行榜/评分。
+- 已接受风险：新旧版本混用时旧客户端丢弃新事件可能状态分叉，恢复路径为清本地重新登录全量重放。

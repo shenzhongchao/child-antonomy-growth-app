@@ -94,7 +94,8 @@ BEGIN
   IF NEW.type NOT IN (
     'state.import','task.done','pick','plan','mood','note',
     'reward.redeem','reward.use','skill.graduate',
-    'settings.name','settings.goal','settings.prices'
+    'settings.name','settings.goal','settings.prices',
+    'wish.propose','wish.decide','custom.done','reward.custom.redeem','wish.retire'
   ) THEN RAISE EXCEPTION 'event type not allowed'; END IF;
 
   IF NEW.day IS NOT NULL THEN
@@ -136,10 +137,37 @@ BEGIN
     END LOOP;
     FOR item IN SELECT value FROM jsonb_array_elements(st->'rewards') LOOP
       IF jsonb_typeof(item) <> 'object'
-         OR COALESCE(item->>'id','') !~ '^[0-5]$'
+         OR NOT (COALESCE(item->>'id','') ~ '^[0-5]$' OR COALESCE(item->>'id','') ~ '^w_.{1,198}$')
          OR COALESCE(item->>'date','') !~ '^\d{4}-\d{2}-\d{2}$'
          OR char_length(COALESCE(item->>'eventId','')) > 200 THEN RAISE EXCEPTION 'invalid import reward'; END IF;
     END LOOP;
+    -- 小心愿字段：旧备份没有这两个字段，缺失时按默认处理；存在时逐条校验。
+    IF st ? 'wishes' THEN
+      IF jsonb_typeof(st->'wishes') <> 'array' OR jsonb_array_length(st->'wishes') > 200 THEN RAISE EXCEPTION 'invalid import wishes'; END IF;
+      FOR item IN SELECT value FROM jsonb_array_elements(st->'wishes') LOOP
+        IF jsonb_typeof(item) <> 'object'
+           OR COALESCE(item->>'id','') !~ '^w_.{1,198}$'
+           OR COALESCE(item->>'kind','') NOT IN ('task','reward')
+           OR char_length(COALESCE(item->>'title','')) NOT BETWEEN 1 AND 16
+           OR char_length(COALESCE(item->>'desc','')) > 24
+           OR COALESCE(item->>'status','') NOT IN ('pending','approved','declined','retired')
+           OR COALESCE(item->>'proposedDay','') !~ '^\d{4}-\d{2}-\d{2}$'
+           OR char_length(COALESCE(item->>'decidedDay','')) NOT IN (0, 10) THEN
+          RAISE EXCEPTION 'invalid import wish';
+        END IF;
+        IF item->>'status' = 'approved' AND item->>'kind' = 'reward'
+           AND (COALESCE(item->>'price','') !~ '^\d{1,2}$' OR (item->>'price')::integer NOT BETWEEN 1 AND 99) THEN
+          RAISE EXCEPTION 'invalid import wish price';
+        END IF;
+      END LOOP;
+    END IF;
+    IF st ? 'customCounts' THEN
+      IF jsonb_typeof(st->'customCounts') <> 'object' THEN RAISE EXCEPTION 'invalid import customCounts'; END IF;
+      IF EXISTS (
+        SELECT 1 FROM jsonb_each_text(st->'customCounts') kv
+        WHERE kv.key !~ '^w_.{1,198}$' OR kv.value !~ '^\d{1,7}$' OR kv.value::integer > 1000000
+      ) THEN RAISE EXCEPTION 'invalid import customCounts'; END IF;
+    END IF;
     RETURN NEW;
   END IF;
 
@@ -151,7 +179,7 @@ BEGIN
     WHEN 'pick' THEN
       IF NEW.day IS NULL OR jsonb_typeof(NEW.payload->'selected') <> 'array' OR jsonb_array_length(NEW.payload->'selected') > 3 THEN RAISE EXCEPTION 'invalid pick'; END IF;
       FOR item IN SELECT value FROM jsonb_array_elements(NEW.payload->'selected') LOOP
-        IF jsonb_typeof(item) <> 'number' OR item::text !~ '^[0-5]$' THEN RAISE EXCEPTION 'invalid pick task'; END IF;
+        IF NOT ((jsonb_typeof(item) = 'number' AND item::text ~ '^[0-5]$') OR (jsonb_typeof(item) = 'string' AND item #>> '{}' ~ '^w_.{1,198}$')) THEN RAISE EXCEPTION 'invalid pick task'; END IF;
       END LOOP;
     WHEN 'plan' THEN
       IF NEW.day IS NULL OR jsonb_typeof(NEW.payload->'plan') <> 'array' OR jsonb_array_length(NEW.payload->'plan') NOT BETWEEN 1 AND 10 OR jsonb_typeof(NEW.payload->'planned') <> 'boolean' THEN RAISE EXCEPTION 'invalid plan'; END IF;
@@ -177,6 +205,28 @@ BEGIN
       FOR item IN SELECT value FROM jsonb_array_elements(NEW.payload->'value') LOOP
         IF jsonb_typeof(item) <> 'number' OR item::text !~ '^\d{1,2}$' OR (item::text)::integer NOT BETWEEN 1 AND 99 THEN RAISE EXCEPTION 'invalid price'; END IF;
       END LOOP;
+    WHEN 'wish.propose' THEN
+      IF NEW.day IS NULL
+         OR COALESCE(NEW.payload->>'kind','') NOT IN ('task','reward')
+         OR char_length(COALESCE(NEW.payload->>'title','')) NOT BETWEEN 1 AND 16
+         OR char_length(COALESCE(NEW.payload->>'desc','')) > 24 THEN RAISE EXCEPTION 'invalid wish.propose'; END IF;
+    WHEN 'wish.decide' THEN
+      IF NEW.day IS NULL
+         OR char_length(COALESCE(NEW.payload->>'wishId','')) NOT BETWEEN 1 AND 200
+         OR jsonb_typeof(NEW.payload->'approve') <> 'boolean' THEN RAISE EXCEPTION 'invalid wish.decide'; END IF;
+      IF NEW.payload ? 'price' AND NEW.payload->>'price' IS NOT NULL
+         AND (jsonb_typeof(NEW.payload->'price') <> 'number' OR COALESCE(NEW.payload->>'price','') !~ '^\d{1,2}$' OR (NEW.payload->>'price')::integer NOT BETWEEN 1 AND 99) THEN RAISE EXCEPTION 'invalid wish.decide price'; END IF;
+    WHEN 'custom.done' THEN
+      IF NEW.day IS NULL
+         OR COALESCE(NEW.payload->>'task','') !~ '^w_.{1,198}$'
+         OR COALESCE(NEW.payload->>'mode','') NOT IN ('self','help') THEN RAISE EXCEPTION 'invalid custom.done'; END IF;
+    WHEN 'reward.custom.redeem' THEN
+      IF NEW.day IS NULL
+         OR COALESCE(NEW.payload->>'reward','') !~ '^w_.{1,198}$'
+         OR COALESCE(NEW.payload->>'cost','') !~ '^\d{1,2}$' OR (NEW.payload->>'cost')::integer NOT BETWEEN 1 AND 99 THEN RAISE EXCEPTION 'invalid reward.custom.redeem'; END IF;
+    WHEN 'wish.retire' THEN
+      IF char_length(COALESCE(NEW.payload->>'wishId','')) NOT BETWEEN 1 AND 200
+         OR jsonb_typeof(NEW.payload->'on') <> 'boolean' THEN RAISE EXCEPTION 'invalid wish.retire'; END IF;
   END CASE;
 
   RETURN NEW;

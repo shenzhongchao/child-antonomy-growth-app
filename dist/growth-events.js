@@ -10,18 +10,23 @@
   var REWARD_COUNT = 6;
   var DEFAULT_PRICES = [5, 8, 10, 15, 12, 15];
   var DEFAULT_PLAN = ['吃点心', '玩20分钟', '学习时间', '自由时间', '整理书包'];
-  var EVENT_TYPES = ['state.import', 'task.done', 'pick', 'plan', 'mood', 'note', 'reward.redeem', 'reward.use', 'skill.graduate', 'settings.name', 'settings.goal', 'settings.prices'];
+  var EVENT_TYPES = ['state.import', 'task.done', 'pick', 'plan', 'mood', 'note', 'reward.redeem', 'reward.use', 'skill.graduate', 'settings.name', 'settings.goal', 'settings.prices',
+    'wish.propose', 'wish.decide', 'custom.done', 'reward.custom.redeem', 'wish.retire'];
   var MAX_COUNTER = 1000000;
+  var WISH_STATUS = ['pending', 'approved', 'declined', 'retired'];
+  var MAX_WISHES = 200;
+  var MAX_PENDING_PER_KIND = 20;
 
   function blank() {
     return {
       days: {}, stars: 0, counts: zeros(TASK_COUNT), rewards: [],
       name: '小小探险家', goal: 3, graduated: [], prices: DEFAULT_PRICES.slice(),
+      wishes: [], customCounts: {},
     };
   }
 
   function blankDay() {
-    return { selected: [], done: {}, plan: DEFAULT_PLAN.slice(), planned: false, mood: null, note: '' };
+    return { selected: [], done: {}, plan: DEFAULT_PLAN.slice(), planned: false, mood: null, note: '', customDone: {} };
   }
 
   function zeros(n) { var a = [], i; for (i = 0; i < n; i++) a.push(0); return a; }
@@ -45,6 +50,12 @@
     list.forEach(function (x) { if (taskId(x) && out.indexOf(x) < 0 && out.length < max) out.push(x); });
     return out;
   }
+  function uniqSelected(list, max) {
+    var out = [];
+    if (!Array.isArray(list)) return out;
+    list.forEach(function (x) { if ((taskId(x) || customRefId(x)) && out.indexOf(x) < 0 && out.length < max) out.push(x); });
+    return out;
+  }
   function safePlan(list) {
     if (!Array.isArray(list) || !list.length) return DEFAULT_PLAN.slice();
     var out = list.slice(0, 10).filter(function (x) { return typeof x === 'string' && x.length > 0; })
@@ -53,6 +64,28 @@
   }
   function validPrices(list) {
     return Array.isArray(list) && list.length === REWARD_COUNT && list.every(function (x) { return intIn(x, 1, 99); });
+  }
+  function wishId(x) { return typeof x === 'string' && x.length >= 1 && x.length <= 200; }
+  function customRefId(x) { return typeof x === 'string' && x.length >= 3 && x.length <= 200 && x.slice(0, 2) === 'w_'; }
+  function cleanWish(w) {
+    w = w && typeof w === 'object' && !Array.isArray(w) ? w : {};
+    var status = WISH_STATUS.indexOf(w.status) >= 0 ? w.status : null;
+    if (!customRefId(w.id) || (w.kind !== 'task' && w.kind !== 'reward') || !status) return null;
+    if (typeof w.title !== 'string' || w.title.length < 1 || w.title.length > 16) return null;
+    if (w.desc != null && (typeof w.desc !== 'string' || w.desc.length > 24)) return null;
+    if (!validDayKey(w.proposedDay)) return null;
+    var price = intIn(w.price, 1, 99) ? w.price : null;
+    if (status === 'approved' && w.kind === 'reward' && price == null) return null;
+    return {
+      id: cleanText(w.id, 200, ''), kind: w.kind, title: w.title, desc: w.desc || '',
+      status: status, price: price, proposedDay: w.proposedDay,
+      decidedDay: validDayKey(w.decidedDay) ? w.decidedDay : null,
+    };
+  }
+  function findWish(s, id) {
+    if (!wishId(id)) return null;
+    for (var i = 0; i < s.wishes.length; i++) if (s.wishes[i].id === id) return s.wishes[i];
+    return null;
   }
 
   function norm(st) {
@@ -64,10 +97,16 @@
     while (out.counts.length < TASK_COUNT) out.counts.push(0);
     if (validPrices(s.prices)) out.prices = s.prices.slice();
     out.graduated = uniqTasks(s.graduated, TASK_COUNT).sort(function (a, b) { return a - b; });
+    if (Array.isArray(s.wishes)) out.wishes = s.wishes.slice(0, MAX_WISHES).map(cleanWish).filter(Boolean);
+    if (s.customCounts && typeof s.customCounts === 'object' && !Array.isArray(s.customCounts)) {
+      Object.keys(s.customCounts).forEach(function (k) {
+        if (customRefId(k) && intIn(s.customCounts[k], 0, MAX_COUNTER)) out.customCounts[k] = s.customCounts[k];
+      });
+    }
     if (Array.isArray(s.rewards)) {
       out.rewards = s.rewards.slice(0, 10000).map(function (r) {
         r = r && typeof r === 'object' ? r : {};
-        if (!rewardId(r.id) || !validDayKey(r.date)) return null;
+        if (!(rewardId(r.id) || customRefId(r.id)) || !validDayKey(r.date)) return null;
         return { id: r.id, date: r.date, used: !!r.used, eventId: cleanText(r.eventId, 200, '') };
       }).filter(Boolean);
     }
@@ -75,7 +114,7 @@
     for (i = 0; i < keys.length; i++) {
       if (!validDayKey(keys[i])) continue;
       var d = s.days[keys[i]] || {}, o = blankDay();
-      o.selected = uniqTasks(d.selected, 3);
+      o.selected = uniqSelected(d.selected, 3);
       if (d.done && typeof d.done === 'object' && !Array.isArray(d.done)) {
         o.done = {};
         Object.keys(d.done).forEach(function (k) {
@@ -87,6 +126,11 @@
       o.planned = !!d.planned;
       if (intIn(d.mood, 0, 4)) o.mood = d.mood;
       o.note = cleanText(d.note, 80, '');
+      if (d.customDone && typeof d.customDone === 'object' && !Array.isArray(d.customDone)) {
+        Object.keys(d.customDone).forEach(function (k) {
+          if (customRefId(k) && (d.customDone[k] === 'self' || d.customDone[k] === 'help') && Object.keys(o.customDone).length < 50) o.customDone[k] = d.customDone[k];
+        });
+      }
       out.days[keys[i]] = o;
     }
     return out;
@@ -97,7 +141,7 @@
     switch (e.type) {
       case 'state.import': return !!e.payload && typeof e.payload === 'object' && !Array.isArray(e.payload);
       case 'task.done': return validDayKey(e.day) && taskId(e.task) && (e.mode === 'self' || e.mode === 'help');
-      case 'pick': return validDayKey(e.day) && Array.isArray(e.selected) && e.selected.length <= 3 && e.selected.every(taskId);
+      case 'pick': return validDayKey(e.day) && Array.isArray(e.selected) && e.selected.length <= 3 && e.selected.every(function (x) { return taskId(x) || customRefId(x); });
       case 'plan': return validDayKey(e.day) && Array.isArray(e.plan) && e.plan.length >= 1 && e.plan.length <= 10 && e.plan.every(function (x) { return typeof x === 'string' && x.length >= 1 && x.length <= 40; }) && typeof e.planned === 'boolean';
       case 'mood': return validDayKey(e.day) && intIn(e.mood, 0, 4);
       case 'note': return validDayKey(e.day) && typeof e.text === 'string' && e.text.length <= 80;
@@ -107,6 +151,11 @@
       case 'settings.name': return typeof e.value === 'string' && e.value.length >= 1 && e.value.length <= 12;
       case 'settings.goal': return [3, 5, 7].indexOf(e.value) >= 0;
       case 'settings.prices': return validPrices(e.value);
+      case 'wish.propose': return validDayKey(e.day) && (e.kind === 'task' || e.kind === 'reward') && typeof e.title === 'string' && e.title.length >= 1 && e.title.length <= 16 && typeof e.desc === 'string' && e.desc.length <= 24 && typeof e.id === 'string' && e.id.length >= 1;
+      case 'wish.decide': return wishId(e.wishId) && typeof e.approve === 'boolean' && validDayKey(e.day) && (e.price == null || intIn(e.price, 1, 99));
+      case 'custom.done': return validDayKey(e.day) && customRefId(e.task) && (e.mode === 'self' || e.mode === 'help');
+      case 'reward.custom.redeem': return validDayKey(e.day) && customRefId(e.reward) && intIn(e.cost, 1, 99);
+      case 'wish.retire': return wishId(e.wishId) && typeof e.on === 'boolean';
       default: return false;
     }
   }
@@ -123,9 +172,11 @@
         if (e.mode === 'self') { s.stars++; s.counts[e.task]++; }
         return s;
       case 'pick': {
-        var pd = day(s, e.day), pick = uniqTasks(e.selected, 3);
+        var pd = day(s, e.day), pick = uniqSelected(e.selected, 3);
         Object.keys(pd.done).map(Number).sort(function (a, b) { return a - b; })
           .forEach(function (n) { if (pick.indexOf(n) < 0) pick.unshift(n); });
+        Object.keys(pd.customDone || {}).sort()
+          .forEach(function (k) { if (pick.indexOf(k) < 0) pick.unshift(k); });
         pd.selected = pick.slice(0, 3);
         return s;
       }
@@ -152,6 +203,54 @@
       case 'settings.name': s.name = e.value; return s;
       case 'settings.goal': s.goal = e.value; return s;
       case 'settings.prices': s.prices = e.value.slice(); return s;
+      case 'wish.propose': {
+        var pending = 0, wid = 'w_' + String(e.id);
+        for (var wi = 0; wi < s.wishes.length; wi++) {
+          if (s.wishes[wi].kind === e.kind && s.wishes[wi].status === 'pending') pending++;
+        }
+        if (pending >= MAX_PENDING_PER_KIND || findWish(s, wid)) return s;
+        s.wishes.push({
+          id: wid, kind: e.kind, title: cleanText(e.title, 16, ''), desc: cleanText(e.desc, 24, ''),
+          status: 'pending', price: null, proposedDay: e.day, decidedDay: null,
+        });
+        return s;
+      }
+      case 'wish.decide': {
+        var wd = findWish(s, e.wishId);
+        if (!wd || wd.status !== 'pending') return s;
+        if (e.approve && wd.kind === 'reward' && !intIn(e.price, 1, 99)) return s;
+        wd.status = e.approve ? 'approved' : 'declined';
+        wd.price = e.approve && wd.kind === 'reward' ? e.price : null;
+        wd.decidedDay = e.day;
+        return s;
+      }
+      case 'custom.done': {
+        var wc = findWish(s, e.task);
+        if (!wc || wc.kind !== 'task' || wc.status !== 'approved') return s;
+        d = day(s, e.day);
+        if (d.customDone[e.task]) return s;
+        d.customDone[e.task] = e.mode;
+        if (e.mode === 'self') {
+          s.stars++;
+          s.customCounts[e.task] = (s.customCounts[e.task] || 0) + 1;
+        }
+        return s;
+      }
+      case 'reward.custom.redeem': {
+        var wr = findWish(s, e.reward);
+        if (!wr || wr.kind !== 'reward' || wr.status !== 'approved') return s;
+        if (s.stars < e.cost) return s;
+        s.stars -= e.cost;
+        s.rewards.push({ id: wr.id, date: e.day, used: false, eventId: cleanText(String(e.id || ''), 200, '') });
+        return s;
+      }
+      case 'wish.retire': {
+        var wt = findWish(s, e.wishId);
+        if (!wt) return s;
+        if (e.on && wt.status === 'approved') wt.status = 'retired';
+        if (!e.on && wt.status === 'retired') wt.status = 'approved';
+        return s;
+      }
       default: return s;
     }
   }

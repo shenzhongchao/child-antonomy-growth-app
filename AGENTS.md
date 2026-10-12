@@ -66,6 +66,7 @@
 - 云端 `server_seq` 是跨设备权威顺序；客户端 `t` 只用于展示和诊断。同步后按 `server_seq` 重放，未确认的本机事件临时排在已确认事件之后。
 - `task.done` 在 reducer 中按日期+任务去重；`reward.redeem` 按权威顺序检查余额，余额不足的并发兑换不生效；`reward.use` 用兑换事件 ID 定位，不能依赖数组下标。
 - 改动任何状态字段或新增业务动作时，必须同时更新 `app.js` 的事件产生点、`growth-events.js` 的 `norm/apply` 和 `scripts/verify.js`。
+- 「小心愿」（愿望池 + 孩子发起任务，方案见 `docs/feature-wish-pool.md`）：自定义任务/奖励用 `w_<事件id>` 字符串 id，不占固定 6 项的数字索引；事件 `wish.propose / wish.decide / custom.done / reward.custom.redeem / wish.retire`；`pick` 的 `selected` 允许数字与 `w_` 字符串混合。自定义挑战只加星、计入 `customCounts`，不进徽章 `counts`；完成记录在 `day.customDone`。云端白名单在 `cloud/schema-v3.sql` 与 `cloud/migrations/2026-10-12-wish-pool.sql`，两者函数体必须保持一致。
 
 ## Handoff Protocol
 

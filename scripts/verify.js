@@ -11,9 +11,9 @@ const DIST = path.join(ROOT, 'dist');
 
 // 核心静态资源 ?v= 版本：HTTP/CDN/浏览器缓存 busting。只能向前递增，绝不复用历史版本号
 // （v=13 曾发布过，回退会让旧缓存命中旧文件，新旧核心脚本混装）。当前指定版本。
-const APP_ASSET_V = 19;
+const APP_ASSET_V = 21;
 // Service Worker Cache Storage 命名空间（growth-vXX），与 ?v=xx 职责不同、不必相等，同样只递增。
-const SW_CACHE_V = 'growth-v18';
+const SW_CACHE_V = 'growth-v20';
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
 const EVENTS = require(path.join(DIST, 'growth-events.js'));
 const RealDate = Date;
@@ -307,6 +307,56 @@ assert(growthStore.lastServerSeq === 4 && growthStore.pending.length === 0, 'las
 GrowthStore.merge([], [], 'p1', 'u1', 4);
 assert(sd(s) === sd(full), '网络重试后的空增量不改变状态（幂等）');
 `);
+
+  console.log('\n== 桩测试：小心愿（许愿 → 审批 → 完成/兑换） ==');
+  runCase({ seed: mkSeed({ stars: 30 }) }, `
+wishModal(); wishKind='reward'; wishForm();
+document.getElementById('wishTitle').value='去一次动物园';
+document.getElementById('wishDesc').value='周末想去';
+proposeWish();
+assert(s.wishes.length===1 && s.wishes[0].status==='pending' && s.wishes[0].kind==='reward', '许愿生成待审批愿望');
+assert(growthStore.pending.some(e=>e.type==='wish.propose'), '许愿产生 wish.propose 待上传事件');
+const wid=s.wishes[0].id;
+wishModal(); wishKind='task'; wishForm();
+document.getElementById('wishTitle').value='自己叠被子';
+proposeWish();
+const tid=s.wishes[1].id;
+assert(s.wishes.length===2 && s.wishes[1].kind==='task' && s.wishes[1].desc==='', '挑战类许愿生成且不带说明');
+parents();
+assert(document.getElementById('modal').innerHTML.includes('孩子许了 2 个小心愿'), '家长中心首屏提示待审批心愿数');
+parentOpen=false; openParentSection('wishes');
+assert(document.getElementById('modal').innerHTML.includes('请家长确认'), '小心愿模块需要家长确认（PIN 防误触）');
+parentOpen=true; parentWishes();
+let html=document.getElementById('modal').innerHTML;
+assert(html.includes('去一次动物园') && html.includes('自己叠被子') && html.includes('批准') && html.includes('这次先不了'), '审批列表展示孩子原文与操作');
+document.getElementById('wishPrice_'+wid).value='12';
+decideWish(wid,true); decideWish(tid,true);
+assert(wishById(wid).status==='approved' && wishById(wid).price===12 && wishById(tid).status==='approved', '审批上架并记录定价');
+assert(growthStore.pending.filter(e=>e.type==='wish.decide').length===2, '审批产生 wish.decide 事件');
+go('rewards');
+html=document.getElementById('main').innerHTML;
+assert(html.includes('我的愿望') && html.includes('去一次动物园') && html.includes('12 颗'), '自定义奖励卡片上架到奖励屋');
+const beforeStars=s.stars;
+confirmCustomReward(wid);
+assert(s.stars===beforeStars-12 && s.rewards.length===1 && s.rewards[0].id===wid, '自定义奖励兑换扣星并入券包');
+assert(growthStore.pending.some(e=>e.type==='reward.custom.redeem'), '产生 reward.custom.redeem 事件');
+parentOpen=true; parentRewards();
+assert(document.getElementById('modal').innerHTML.includes('去一次动物园'), '家长端待兑现列表显示自定义券名称');
+choose();
+assert(document.getElementById('modal').innerHTML.includes('我自己想练的'), '选择弹窗包含自定义挑战');
+pick(tid); savePicks();
+assert(today().selected.includes(tid), '自定义挑战进入今日选择');
+assert(growthStore.pending.some(e=>e.type==='pick' && e.selected.includes(tid)), 'pick 事件携带 w_ 自定义挑战 id');
+finishCustom(tid,'self');
+assert(s.customCounts[tid]===1 && today().customDone[tid]==='self', '自定义挑战自主完成计数');
+assert(growthStore.pending.some(e=>e.type==='custom.done'), '产生 custom.done 事件');
+retireWish(tid,true);
+assert(wishById(tid).status==='retired', '下架生效');
+choose();
+assert(!document.getElementById('modal').innerHTML.includes('自己叠被子'), '下架后不再出现在选择中');
+retireWish(tid,false);
+assert(wishById(tid).status==='approved', '重新上架生效');
+`);
 }
 
 // ---------- V2 本地账本：一个账号一个孩子 ----------
@@ -477,6 +527,74 @@ function eventTests() {
   assert(planB.mode === 'normal' && planB.dropIds.length === 0, '新账号无云端历史：允许作为初始基线上传');
   const planC = EVENTS.syncPlan(remoteRows, [{ id: 'n1', type: 'note', t: 9e13, day: '2026-09-01', text: 'x' }]);
   assert(planC.mode === 'normal' && planC.dropIds.length === 0, '普通 pending 不受备份保护策略影响');
+
+  // 13) 小心愿全链路：提议 → 审批定价 → 完成/兑换/兑现
+  const wishEv = [
+    { id: 'w-base', type: 'state.import', t: 0, payload: Object.assign(EVENTS.blank(), { stars: 25 }) },
+    { id: 'wp1', type: 'wish.propose', t: 1, day: '2026-10-12', kind: 'reward', title: '去一次动物园', desc: '周末想去' },
+    { id: 'wp2', type: 'wish.propose', t: 2, day: '2026-10-12', kind: 'task', title: '自己叠被子', desc: '' },
+    { id: 'wd1', type: 'wish.decide', t: 3, day: '2026-10-12', wishId: 'w_wp1', approve: true, price: 20 },
+    { id: 'wd2', type: 'wish.decide', t: 4, day: '2026-10-12', wishId: 'w_wp2', approve: true },
+    { id: 'cd1', type: 'custom.done', t: 5, day: '2026-10-12', task: 'w_wp2', mode: 'self' },
+    { id: 'cd2', type: 'custom.done', t: 6, day: '2026-10-12', task: 'w_wp2', mode: 'self' },
+    { id: 'cr1', type: 'reward.custom.redeem', t: 7, day: '2026-10-12', reward: 'w_wp1', cost: 20 },
+    { id: 'cu1', type: 'reward.use', t: 8, rewardId: 'cr1' },
+  ];
+  const ws = EVENTS.replay(wishEv);
+  assert(ws.wishes.length === 2 && ws.wishes[0].status === 'approved' && ws.wishes[0].price === 20, '愿望审批后上架并记录定价');
+  assert(ws.stars === 6, '星星 = 25 + 1(自定义挑战自主完成) − 20(兑换自定义奖励)');
+  assert(ws.customCounts['w_wp2'] === 1 && Object.keys(ws.days['2026-10-12'].customDone).length === 1, 'custom.done 按日期+任务去重，自主完成计入 customCounts');
+  assert(ws.counts.every(x => x === 0), '自定义挑战不进入固定 6 项徽章计数');
+  assert(ws.rewards.length === 1 && ws.rewards[0].id === 'w_wp1' && ws.rewards[0].used === true, '自定义奖励券兑换并按兑换事件 id 兑现');
+
+  // 14) 非法路径：未审批 / 未知愿望 / 缺价审批 / 余额不足 / 重复审批 全部不生效
+  const badPaths = EVENTS.replay([
+    { id: 'b0', type: 'state.import', t: 0, payload: Object.assign(EVENTS.blank(), { stars: 5 }) },
+    { id: 'p1', type: 'wish.propose', t: 1, day: '2026-10-12', kind: 'task', title: '自己叠被子', desc: '' },
+    { id: 'x1', type: 'custom.done', t: 2, day: '2026-10-12', task: 'w_p1', mode: 'self' },
+    { id: 'x2', type: 'custom.done', t: 3, day: '2026-10-12', task: 'w_nope', mode: 'self' },
+    { id: 'p2', type: 'wish.propose', t: 4, day: '2026-10-12', kind: 'reward', title: '看动画片', desc: '' },
+    { id: 'd2', type: 'wish.decide', t: 5, day: '2026-10-12', wishId: 'w_p2', approve: true },
+    { id: 'x3', type: 'reward.custom.redeem', t: 6, day: '2026-10-12', reward: 'w_p2', cost: 3 },
+    { id: 'd3', type: 'wish.decide', t: 7, day: '2026-10-12', wishId: 'w_p2', approve: true, price: 3 },
+    { id: 'x4', type: 'reward.custom.redeem', t: 8, day: '2026-10-12', reward: 'w_p2', cost: 99 },
+    { id: 'd4', type: 'wish.decide', t: 9, day: '2026-10-12', wishId: 'w_p2', approve: false },
+  ]);
+  assert(badPaths.stars === 5 && badPaths.rewards.length === 0, '未批准/缺价/余额不足/重复审批均不生效');
+  const wp2w = badPaths.wishes.find(w => w.id === 'w_p2');
+  assert(wp2w.status === 'approved' && wp2w.price === 3, '并发重复审批按权威顺序首个生效');
+
+  // 15) 下架与恢复：下架期间完成/兑换不生效，恢复上架后继续累计
+  const retired = EVENTS.replay(wishEv.concat([
+    { id: 'rt1', type: 'wish.retire', t: 9, wishId: 'w_wp2', on: true },
+    { id: 'cd3', type: 'custom.done', t: 10, day: '2026-10-13', task: 'w_wp2', mode: 'self' },
+    { id: 'rt2', type: 'wish.retire', t: 11, wishId: 'w_wp2', on: false },
+    { id: 'cd4', type: 'custom.done', t: 12, day: '2026-10-13', task: 'w_wp2', mode: 'self' },
+  ]));
+  assert(retired.customCounts['w_wp2'] === 2 && retired.stars === 7, '下架期间完成不生效，恢复上架后继续累计');
+  assert(retired.wishes.find(w => w.id === 'w_wp2').status === 'approved', '下架可逆，恢复为已上架');
+
+  // 16) pending 上限 + norm 清洗 + 旧格式兼容
+  const spam = [{ id: 'b0', type: 'state.import', t: 0, payload: EVENTS.blank() }];
+  for (let i = 0; i < 25; i++) spam.push({ id: 'sp' + i, type: 'wish.propose', t: i + 1, day: '2026-10-12', kind: 'task', title: '愿望' + i, desc: '' });
+  const spammed = EVENTS.replay(spam);
+  assert(spammed.wishes.length === 20, '同类 pending 愿望上限 20，超出被拒');
+  const dirty = EVENTS.norm({
+    wishes: [
+      { id: 'w_ok', kind: 'task', title: '合法愿望', desc: '', status: 'pending', price: null, proposedDay: '2026-10-12', decidedDay: null },
+      { id: 'noPrefix', kind: 'task', title: 'x', desc: '', status: 'pending', price: null, proposedDay: '2026-10-12', decidedDay: null },
+      { id: 'w_badkind', kind: 'other', title: 'x', desc: '', status: 'pending', price: null, proposedDay: '2026-10-12', decidedDay: null },
+      { id: 'w_long', kind: 'reward', title: 'x'.repeat(17), desc: '', status: 'pending', price: null, proposedDay: '2026-10-12', decidedDay: null },
+      { id: 'w_noprice', kind: 'reward', title: '缺价', desc: '', status: 'approved', price: null, proposedDay: '2026-10-12', decidedDay: '2026-10-12' },
+    ],
+    customCounts: { 'w_ok': 3, 'bad key': 5, 'w_neg': -1 },
+    rewards: [{ id: 'w_ok', date: '2026-10-12', used: false, eventId: 'e1' }],
+  });
+  assert(dirty.wishes.length === 1 && dirty.wishes[0].id === 'w_ok', 'norm 丢弃非法愿望条目（无 w_ 前缀/非法 kind/超长标题/批准缺价）');
+  assert(dirty.customCounts['w_ok'] === 3 && Object.keys(dirty.customCounts).length === 1, 'norm 清洗 customCounts 键值');
+  assert(dirty.rewards.length === 1 && dirty.rewards[0].id === 'w_ok', 'norm 允许 w_ 前缀的自定义奖励券 id');
+  const legacy = EVENTS.norm({ days: { '2026-10-01': { selected: [0], done: { 0: 'self' }, plan: ['吃点心'], planned: true, mood: 2, note: 'x' } }, stars: 3, counts: [1, 0, 0, 0, 0, 0], rewards: [], name: '旧', goal: 3, graduated: [], prices: [5, 8, 10, 15, 12, 15] });
+  assert(legacy.wishes.length === 0 && legacy.days['2026-10-01'].customDone && legacy.stars === 3, '旧格式备份归一化补全新字段且不丢数据');
 }
 
 // ---------- 云同步端到端：增量拉取 + 旧备份不覆盖云端 ----------
