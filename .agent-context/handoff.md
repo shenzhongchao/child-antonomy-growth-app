@@ -43,9 +43,9 @@
 - PIN 仅防误触，不作为安全机制。
 
 ## Follow-ups
-- 手机端 PWA 实机自检待用户确认：四页面可用 / 家长中心分层与 PIN 下沉 / 安装引导（iOS 与安卓各测一次）/ 完成挑战加分且不可重复 / 云同步跑通（表权限刚收窄过）。
+- 手机端 PWA 实机自检待用户执行，清单已备好：`docs/pwa-device-checklist.md`（四页面 / 家长中心分层与 PIN 下沉 / 安装引导 iOS+Android / 完成挑战防重复 / 云同步 / 离线弱网 / 成长足迹边界）。
 - 免费 SSL 证书 `b01svyHU` **2026-12-21 到期**，届时重新申请并换绑。
-- 远端仍有分支 `feat/parent-center-restructure` 未删除，可按需清理。
+- 远端分支 `feat/parent-center-restructure` 已删除（2026-10-12）；同日确认其余旧功能分支均为 squash 合入（成长足迹 `be7670d`、安全加固 `635f30f`、云同步 UX `45c4872`、移除桌面版 `de577c5`），已清理 `feature/growth-history-v1`、`offline`、`security/hardening-v1`、`ux/cloud-sync-feedback`，现仅余 `main`。
 
 ## Version discipline
 后续只要修改 `dist/` 中任何 HTML/CSS/JS：
