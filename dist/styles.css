@@ -159,3 +159,8 @@ body.night .parent-card,body.night .parent-module,body.night .parent-toggle{back
 .parent-wish-actions input{width:64px;padding:7px 9px;border:2px solid #d5e5ed;border-radius:11px;font:inherit}
 body.night .choice-tag{background:#20304f;color:#9fc6e8}
 body.night .parent-wish-actions input{background:#262e5c;border-color:#4553a0;color:#eef1ff}
+
+.wish-hint{background:#fff6de;border-color:#f0dca0;box-shadow:0 4px 0 #eee0b6}
+body.night .wish-hint{background:#453a1c;border-color:#a8813a;box-shadow:0 4px 0 #241d0e}
+.wish-choice{background:#fff0f2;border-color:#f0b9c4;box-shadow:0 3px 0 #f2cdd5}
+body.night .wish-choice{background:#4a2a33;border-color:#a85a6a;box-shadow:0 3px 0 #241d0e}
