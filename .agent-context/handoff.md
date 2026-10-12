@@ -4,9 +4,10 @@
 「小心愿」入口引导优化 + 挑战区小清理：① 奖励屋奖励列表底部引导卡；② 挑选挑战弹窗列表末尾许愿按钮（可交互样式）。今天页引导卡按用户要求已撤掉。另：空状态下隐藏与大按钮重复的「自己选挑战」链接。
 
 ## Current status
-- Status: deployed（`?v=25` / `growth-v24` 已上线并通过线上复核；**本地改动尚未 git commit**）
-- Last agent: 小布（部署）/ Kimi（改动）
-- Branch: `main`
+- Status: released（`v1.0.0` 已打 tag 并推送；`?v=25` / `growth-v24` 已上线并通过线上复核）
+- Last agent: 小布（部署 / 发版）/ Kimi（改动）
+- Branch: `main`（与 origin/main 同步）
+- 发布提交：`06e6488`，tag `v1.0.0`（annotated）
 
 ## 改动内容
 - `dist/app.js`
@@ -33,9 +34,9 @@
   - 已删的 `/today/` 仍为 404，无回归。
 
 ## Next steps
-1. **提交 git**（`dist/*` + `scripts/verify.js` 仍是未提交状态）。
-2. 沿用提醒：手机端实机自检 `docs/pwa-device-checklist.md`；SSL 证书 2026-12-21 到期需换绑。
-3. 提示：部署后用手机打开若仍是旧版，清一次浏览器的 Service Worker / 站点数据（本地预览时出现过 SW 返回旧 app.js 的情况）。
+1. 沿用提醒：手机端实机自检 `docs/pwa-device-checklist.md`；SSL 证书 2026-12-21 到期需换绑。
+2. 提示：部署后用手机打开若仍是旧版，清一次浏览器的 Service Worker / 站点数据（本地预览时出现过 SW 返回旧 app.js 的情况）。
+3. 后续迭代从这里起：`v1.0.0` 已冻结为功能完善基线，改动务必继续保持 `?v` 与 SW `VERSION` 双递增。
 
 ## 产品边界（保持不变）
 - 纯 UI 引导与流程衔接，不产生新事件类型、不改状态字段；local-first；历史只读；PIN 仅防误触。
