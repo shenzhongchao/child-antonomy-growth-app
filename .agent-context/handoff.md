@@ -7,7 +7,7 @@
 - Status: in_progress
 - Last agent: Codex
 - Branch: main
-- 本地实现与浏览器实测完成，正在按此前授权提交、推送、部署。
+- 本地实现、浏览器实测与部署完成；GitHub 网络故障，推送重试中。
 
 ## Goal / acceptance criteria
 - [x] 点击当前券「请家长核销」直接打开专属弹窗，展示券名与兑换日期。
@@ -15,7 +15,8 @@
 - [x] 按兑换事件 ID 定位，避免同步重排后核销错券；取消、错误 PIN、重复提交不写事件。
 - [x] 复用 reward.use，保留账本、不重复扣星、不解锁家长设置。
 - [x] node scripts/verify.js ALL_PASS；git diff --check 通过。
-- [ ] 提交推送、部署与线上文件比对。
+- [x] 本地提交 9a92f9f、CloudBase 部署与线上文件比对。
+- [ ] GitHub 推送：连接重置/443 超时，重试中。
 
 ## Files touched
 - dist/app.js：rewardUseModal / confirmCouponUse，弹窗目标 ID 随打开其他弹窗或关闭清空。
@@ -33,4 +34,9 @@
 - 未实测手机或跨设备同步；同步重排与已使用保护已有桩测试。
 
 ## Next steps
-- 提交推送与 CloudBase 部署，然后逐字节核验正式域名文件。
+- 完成 GitHub 推送并核对远端 SHA。
+
+## Deployment (2026-10-19)
+- tcb hosting deploy dist -e itonghao-d5gv3zqpl9f36e109：21/21 上传成功。
+- https://today.itonghao.cn：21 文件逐字节匹配；实际 index.html、app.js?v=27、auth.js?v=27、sw.js URL 也匹配。
+- 当前版本 ?v=27 / growth-v26。
