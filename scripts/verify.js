@@ -11,9 +11,9 @@ const DIST = path.join(ROOT, 'dist');
 
 // 核心静态资源 ?v= 版本：HTTP/CDN/浏览器缓存 busting。只能向前递增，绝不复用历史版本号
 // （v=13 曾发布过，回退会让旧缓存命中旧文件，新旧核心脚本混装）。当前指定版本。
-const APP_ASSET_V = 26;
+const APP_ASSET_V = 27;
 // Service Worker Cache Storage 命名空间（growth-vXX），与 ?v=xx 职责不同、不必相等，同样只递增。
-const SW_CACHE_V = 'growth-v25';
+const SW_CACHE_V = 'growth-v26';
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
 const EVENTS = require(path.join(DIST, 'growth-events.js'));
 const RealDate = Date;
@@ -319,6 +319,30 @@ assert(s.rewards.every(r=>r.used) && s.stars===17, '多张固定券依次核销�
 assert(growthStore.pending.filter(e=>e.type==='reward.use').length===2, '每张券单独记录核销事件');
 `);
 
+  runCase({ seed: mkSeed({ stars: 30 }) }, `
+go('rewards'); confirmReward(0); confirmReward(1);
+const targetId=s.rewards[1].eventId;
+rewardUseModal(encodeURIComponent(targetId));
+let dialog=document.getElementById('modal').innerHTML;
+assert(dialog.includes('核销这张奖励券') && dialog.includes(rewards[1][1]) && !dialog.includes('保存兑换规则'), '核销弹窗仅展示当前券，不进入家长设置');
+document.getElementById('couponPin').value='0000'; confirmCouponUse();
+assert(!s.rewards[1].used && !growthStore.pending.some(e=>e.type==='reward.use'), '错误 PIN 不核销');
+closeModal(); document.getElementById('couponPin').value='1234'; confirmCouponUse();
+assert(!s.rewards[1].used, '取消后不能继续核销');
+rewardUseModal(encodeURIComponent(targetId));
+s.rewards.reverse();
+document.getElementById('couponPin').value='1234'; confirmCouponUse();
+assert(s.rewards.find(r=>r.eventId===targetId).used && !s.rewards.find(r=>r.eventId!==targetId).used, '重排后仍按事件 ID 核销当前券');
+assert(page==='rewards' && !document.getElementById('modal').open && !parentOpen, '核销后关闭弹窗并留在奖励屋，不解锁家长设置');
+assert(s.stars===17 && growthStore.pending.filter(e=>e.type==='reward.use').length===1, '独立核销不扣星且记录一次');
+confirmCouponUse();
+assert(growthStore.pending.filter(e=>e.type==='reward.use').length===1, '双击核销不重复记录');
+rewardUseModal(encodeURIComponent(s.rewards.find(r=>!r.used).eventId));
+s.rewards.find(r=>!r.used).used=true;
+document.getElementById('couponPin').value='1234'; confirmCouponUse();
+assert(growthStore.pending.filter(e=>e.type==='reward.use').length===1, '同步已核销的券不能再次核销');
+`);
+
   console.log('\n== 桩测试：小心愿（许愿 → 审批 → 完成/兑换） ==');
   runCase({ seed: mkSeed({ stars: 30 }) }, `
 wishModal(); wishKind='reward'; wishForm();
@@ -351,6 +375,9 @@ const beforeStars=s.stars;
 confirmCustomReward(wid);
 assert(s.stars===beforeStars-12 && s.rewards.length===1 && s.rewards[0].id===wid, '自定义奖励兑换扣星并入券包');
 assert(growthStore.pending.some(e=>e.type==='reward.custom.redeem'), '产生 reward.custom.redeem 事件');
+rewardUseModal(encodeURIComponent(s.rewards[0].eventId));
+assert(document.getElementById('modal').innerHTML.includes('去一次动物园'), '独立核销弹窗支持自定义奖励');
+closeModal();
 parentOpen=true; parentRewards();
 assert(document.getElementById('modal').innerHTML.includes('去一次动物园'), '家长端待兑现列表显示自定义券名称');
 parentOpen=false; useReward(0);

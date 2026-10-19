@@ -1,42 +1,36 @@
 # Agent Handoff
 
 ## Task
-奖励券核销入口与奖励屋列表精简。
+奖励券核销体验修正：当前券独立弹窗，不跳转家长设置。
 
 ## Current status
-- Status: done
+- Status: in_progress
 - Last agent: Codex
 - Branch: main
-- 已提交推送并部署至 CloudBase 正式环境。产品提交：689cb12。
+- 本地实现与浏览器实测完成，正在按此前授权提交、推送、部署。
 
 ## Goal / acceptance criteria
-- [x] 奖励券提供家长核销入口，保留 1234 防误触。
-- [x] 已核销券从奖励屋与家长待核销列表隐藏；原始账本记录保留。
-- [x] 移除奖励屋「我的小心愿」列表和重复许愿按钮，保留引导卡和审批功能。
+- [x] 点击当前券「请家长核销」直接打开专属弹窗，展示券名与兑换日期。
+- [x] 在弹窗输入 1234 并确认已使用；关闭后仍停留在奖励屋。
+- [x] 按兑换事件 ID 定位，避免同步重排后核销错券；取消、错误 PIN、重复提交不写事件。
+- [x] 复用 reward.use，保留账本、不重复扣星、不解锁家长设置。
 - [x] node scripts/verify.js ALL_PASS；git diff --check 通过。
+- [ ] 提交推送、部署与线上文件比对。
 
 ## Files touched
-- dist/app.js：待用券过滤、核销入口、核销反馈、移除心愿列表及修正文案。
-- dist/index.html / dist/auth.js：资源版本 v26。
-- dist/sw.js：缓存 growth-v25。
-- scripts/verify.js：同步版本断言，增加固定/自定义券核销、重复保护、家长门禁和页面列表回归。
+- dist/app.js：rewardUseModal / confirmCouponUse，弹窗目标 ID 随打开其他弹窗或关闭清空。
+- dist/index.html / dist/auth.js：资源 v27。
+- dist/sw.js：growth-v26。
+- scripts/verify.js：独立核销、取消、错误 PIN、同步重排/已使用、重复提交、自定义券回归。
 
 ## Confirmed facts
-- 原有 reward.use 已支持核销，原入口位于家长中心奖励规则；复用原事件，不新增状态。
-- 心愿列表原来显示审批状态；删除后奖励屋不再展示审批状态，仍可提议且家长可审批。
-- 旧发布快照保存在 archived/handoff_2026-10-12_release-v1.0.0.md。
+- Playwright 实际点击：奖励屋兑换固定券 → 请家长核销 → 专属弹窗 → 0000 被拒 → 1234 确认 → 券消失、弹窗关闭、仍在奖励屋。
+- 本地独立浏览器测试，人工注入 30 星测试余额；兑换后 25 星，核销后仍为 25 星，存储 used=true。
+- 浏览器无 JS 错误，仅密码输入框不在 form 内的 verbose 提示。
+- pack-web.py：21 文件，ZIP 根目录校验通过。
 
 ## Hypotheses / uncertain points
-- 本轮没有进行真实浏览器或手机实测；回归为现有 Node 桩测试和纯逻辑检查。
+- 未实测手机或跨设备同步；同步重排与已使用保护已有桩测试。
 
 ## Next steps
-- 本轮交付完成；手机端可打开 https://today.itonghao.cn 体验。
-
-## Release verification (2026-10-19)
-- node scripts/verify.js：ALL_PASS；git diff --check：通过。
-- python scripts/pack-web.py：21 个文件，ZIP 根目录校验通过。
-- tcb hosting deploy dist -e itonghao-d5gv3zqpl9f36e109：21/21 上传成功。
-- 正式域名 https://today.itonghao.cn：21 个文件 HTTP 200，逐字节匹配本地 dist；另核验实际 index.html、app.js?v=26、auth.js?v=26、sw.js URL 匹配。
-- 资源版本 ?v=26；SW growth-v25。
-- 产品提交 689cb12ad5a933859ba797040356d6271d08598b 已推送 origin/main。
-- 验证边界：本轮未做真实浏览器交互、短信登录或跨设备同步实测。
+- 提交推送与 CloudBase 部署，然后逐字节核验正式域名文件。
