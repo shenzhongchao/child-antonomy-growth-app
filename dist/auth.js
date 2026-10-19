@@ -61,7 +61,7 @@
       _app = testApp; _auth = testApp.auth ? testApp.auth() : null; _db = testApp.rdb();
       return Promise.resolve(_app);
     }
-    var url = new URL('cloudbase.esm.js?v=25', location.href).href;
+    var url = new URL('cloudbase.esm.js?v=26', location.href).href;
     _sdk = import(url).then(function (m) { return m.default || m.cloudbase || m; });
     return _sdk;
   }

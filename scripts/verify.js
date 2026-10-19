@@ -11,9 +11,9 @@ const DIST = path.join(ROOT, 'dist');
 
 // 核心静态资源 ?v= 版本：HTTP/CDN/浏览器缓存 busting。只能向前递增，绝不复用历史版本号
 // （v=13 曾发布过，回退会让旧缓存命中旧文件，新旧核心脚本混装）。当前指定版本。
-const APP_ASSET_V = 25;
+const APP_ASSET_V = 26;
 // Service Worker Cache Storage 命名空间（growth-vXX），与 ?v=xx 职责不同、不必相等，同样只递增。
-const SW_CACHE_V = 'growth-v24';
+const SW_CACHE_V = 'growth-v25';
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
 const EVENTS = require(path.join(DIST, 'growth-events.js'));
 const RealDate = Date;
@@ -308,6 +308,17 @@ GrowthStore.merge([], [], 'p1', 'u1', 4);
 assert(sd(s) === sd(full), '网络重试后的空增量不改变状态（幂等）');
 `);
 
+  runCase({ seed: mkSeed({ stars: 30 }) }, `
+go('rewards');
+confirmReward(0); confirmReward(1);
+parentOpen=true; useReward(0);
+assert(s.rewards[0].used && !s.rewards[1].used, '核销固定券只影响指定兑换');
+assert(document.getElementById('main').innerHTML.includes('>请家长核销</button>'), '其他未使用的券仍可核销');
+useReward(1);
+assert(s.rewards.every(r=>r.used) && s.stars===17, '多张固定券依次核销且只在兑换时扣星');
+assert(growthStore.pending.filter(e=>e.type==='reward.use').length===2, '每张券单独记录核销事件');
+`);
+
   console.log('\n== 桩测试：小心愿（许愿 → 审批 → 完成/兑换） ==');
   runCase({ seed: mkSeed({ stars: 30 }) }, `
 wishModal(); wishKind='reward'; wishForm();
@@ -342,6 +353,19 @@ assert(s.stars===beforeStars-12 && s.rewards.length===1 && s.rewards[0].id===wid
 assert(growthStore.pending.some(e=>e.type==='reward.custom.redeem'), '产生 reward.custom.redeem 事件');
 parentOpen=true; parentRewards();
 assert(document.getElementById('modal').innerHTML.includes('去一次动物园'), '家长端待兑现列表显示自定义券名称');
+parentOpen=false; useReward(0);
+assert(!s.rewards[0].used, '未通过家长确认不能核销');
+openParentSection('rewards');
+assert(document.getElementById('modal').innerHTML.includes('请家长确认'), '奖励核销入口要求 PIN');
+parentOpen=true; useReward(0);
+assert(s.rewards[0].used && s.stars===beforeStars-12, '核销自定义券且不重复扣星');
+assert(!document.getElementById('main').innerHTML.includes('>请家长核销</button>'), '用过的券从奖励屋收起');
+assert(!document.getElementById('modal').innerHTML.includes('去一次动物园'), '用过的券从待核销列表收起');
+const uses=growthStore.pending.filter(e=>e.type==='reward.use').length;
+useReward(0);
+assert(growthStore.pending.filter(e=>e.type==='reward.use').length===uses, '重复核销不产生事件');
+assert(!document.getElementById('main').innerHTML.includes('我的小心愿') && document.getElementById('main').innerHTML.includes('wishModal()'), '移除心愿列表且保留许愿入口');
+
 choose();
 assert(document.getElementById('modal').innerHTML.includes('我自己想练的'), '选择弹窗包含自定义挑战');
 pick(tid); savePicks();
