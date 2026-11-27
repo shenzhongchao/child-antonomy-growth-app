@@ -9,6 +9,7 @@
   var _app = null, _auth = null, _db = null, _sdk = null;
   var _uid = null, _phone = '', _verification = null;
   var _status = 'off', _error = '', _mount = null, _timer = null, _busy = false;
+  var _leaving = false, _syncJob = null;
   var _codeSending = false, _codeUntil = 0, _codeTimer = null, _codeMessage = '', _loginExpanded = false;
 
   function conf() { return window.GROWTH_CLOUD || {}; }
@@ -61,7 +62,7 @@
       _app = testApp; _auth = testApp.auth ? testApp.auth() : null; _db = testApp.rdb();
       return Promise.resolve(_app);
     }
-    var url = new URL('cloudbase.esm.js?v=27', location.href).href;
+    var url = new URL('cloudbase.esm.js?v=28', location.href).href;
     _sdk = import(url).then(function (m) { return m.default || m.cloudbase || m; });
     return _sdk;
   }
@@ -147,12 +148,14 @@
   }
 
   function syncNow(silent) {
-    if (!configured() || !_uid || _busy) return Promise.resolve(null);
+    if (!configured() || !_uid || _busy || _leaving) return Promise.resolve(null);
     _busy = true; _status = 'syncing'; render();
+    try { GrowthStore.activateAccount(_uid); }
+    catch (e) { _status = 'error'; _error = '切换本机记录失败：' + errText(e); _busy = false; render(); return Promise.resolve(null); }
     var pack = store() || {};
     var fromSeq = (pack.confirmedState == null) ? 0 : (Number(pack.lastServerSeq) || 0);
     var profileId;
-    return ensureProfile(_uid)
+    _syncJob = ensureProfile(_uid)
       .then(function (id) { profileId = id; return listEvents(profileId, fromSeq); })
       .then(function (remote) {
         var st = store() || {}, pending = (st.pending || []).slice();
@@ -186,6 +189,7 @@
         if (v === 'ok' && ((store() || {}).pending || []).length) markDirty();
         return v;
       });
+    return _syncJob;
   }
 
   function statusText() {
@@ -206,7 +210,9 @@
     if (_status === 'off') {
       h += '<p class="sub">云端同步尚未配置。孩子可以正常使用，但清理浏览器数据后无法从云端恢复记录。</p>';
     } else if (!_uid) {
-      h += '<p class="sub">绑定家长手机号后，记录会自动同步到云端；换设备登录同一手机号，也能恢复记录。孩子不用登录。</p>';
+      h += (store() || {}).userId
+        ? '<p class="sub">当前显示上次使用的孩子记录。登录原手机号会继续同步这些记录，登录其他手机号会打开对应孩子的记录。</p>'
+        : '<p class="sub">绑定家长手机号后，记录会自动同步到云端；换设备登录同一手机号，也能恢复记录。孩子不用登录。</p>';
       if (!_loginExpanded) {
         h += '<button class="primary" onclick="Cloud.showLogin()">登录并开启云端同步</button>';
       } else {
@@ -219,7 +225,9 @@
       }
     } else {
       if (_status === 'error') h += '<p class="sub">' + esc(_error) + '</p>';
-      h += '<p class="sub">记录会在后台自动同步到云端，无需手动操作。退出账号请到「记录与数据」。</p>';
+      h += '<p class="sub">记录会在后台自动同步到云端，无需手动操作。</p>' +
+        '<button class="secondary" onclick="openParentSection(\'switchAccount\')">切换账号</button> ' +
+        '<button class="link" onclick="openParentSection(\'logout\')">退出家长账号</button>';
     }
     el.innerHTML = h;
   }
@@ -267,9 +275,23 @@
         render(); return syncNow();
       }).catch(function (e) { notify(errText(e)); });
   }
-  function logout() {
-    var done = _auth && _auth.signOut ? _auth.signOut().catch(function () {}) : Promise.resolve();
-    done.then(function () { _uid = null; _status = 'login'; _loginExpanded = false; render(); notify('已退出云端同步账号，记录仍保存在本机'); });
+  function logout(switching) {
+    if (_leaving) return;
+    if (!_uid) { _loginExpanded = !!switching; parents(); return; }
+    _leaving = true;
+    clearTimeout(_timer);
+    return Promise.resolve(_syncJob).then(function () {
+      return _auth.signOut();
+    }).then(function (res) {
+      if (res && res.error) throw res.error;
+      _uid = null; _phone = ''; _verification = null; _status = 'login'; _error = '';
+      _loginExpanded = !!switching; _codeMessage = ''; _codeUntil = 0;
+      clearInterval(_codeTimer); _codeTimer = null;
+      parentOpen = false; parents();
+      notify(switching ? '请输入另一位家长的手机号' : '已退出账号，成长记录保存在本机');
+    }).catch(function (e) {
+      notify('退出未完成：' + errText(e));
+    }).finally(function () { _leaving = false; });
   }
   function markDirty() {
     if (!configured() || !_uid) return;
@@ -280,7 +302,7 @@
   window.Cloud = {
     boot: boot, mount: mount, showLogin: showLogin, hideLogin: hideLogin, sendCode: sendCode, login: login, logout: logout,
     syncNow: function () { return syncNow(); }, markDirty: markDirty,
-    configured: configured, status: function () { return _status; },
+    configured: configured, signedIn: function () { return !!_uid; }, status: function () { return _status; },
     __test: function (app, uid) {
       _app = app; _auth = app && app.auth ? app.auth() : null; _db = app && app.rdb ? app.rdb() : null;
       if (uid) _uid = uid;

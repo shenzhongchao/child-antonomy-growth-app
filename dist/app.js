@@ -15,7 +15,32 @@ function persistStore(){growthStore.state=s;try{localStorage.setItem(STORE_KEY,J
 function eventOf(type,data={}){growthStore.sequence++;return Object.assign({id:GrowthEvents.newId(growthStore.deviceId,growthStore.sequence),type,t:Date.now()},data)}
 function save(events){let list=events?(Array.isArray(events)?events:[events]):[];list.forEach(e=>growthStore.pending.push(e.id?e:eventOf(e.type,e)));persistStore();try{if(list.length&&window.Cloud&&window.Cloud.markDirty)Cloud.markDirty()}catch(e){}return list}
 function mergeGrowth(remote,ackIds,profileId,userId,lastServerSeq){const ack=new Set(ackIds||[]);growthStore.pending=growthStore.pending.filter(e=>!ack.has(e.id));const base=GrowthEvents.norm(growthStore.confirmedState||GrowthEvents.blank());growthStore.confirmedState=GrowthEvents.advance(base,remote||[]);const max=Math.max(Number(growthStore.lastServerSeq)||0,Number(lastServerSeq)||0);growthStore.profileId=profileId||growthStore.profileId;growthStore.userId=userId||growthStore.userId;growthStore.lastServerSeq=max;growthStore.lastSync=Date.now();s=GrowthEvents.project(growthStore.confirmedState,growthStore.pending.map((e,i)=>Object.assign({},e,{order:max+i+1})));persistStore();render()}
-window.GrowthStore={read:()=>growthStore,eventOf,merge:mergeGrowth,persist:persistStore,dropPending:(ids)=>{const set=new Set(ids||[]);growthStore.pending=growthStore.pending.filter(e=>!set.has(String(e.id)));persistStore()},setAccount:(profileId,userId)=>{growthStore.profileId=profileId;growthStore.userId=userId;persistStore()}};
+function activateAccount(uid){
+  if(growthStore.userId===uid)return;
+  if(!growthStore.userId){
+    const bound={...growthStore,userId:uid,state:s};
+    localStorage.setItem(STORE_KEY,JSON.stringify(bound));
+    growthStore=bound;
+    return;
+  }
+  const key=id=>STORE_KEY+'.account.'+id;
+  const saved=localStorage.getItem(key(uid));
+  const next=saved===null?freshStore():JSON.parse(saved);
+  if(saved!==null && (next.version!==2 || next.userId!==uid || !next.state || !Array.isArray(next.pending)))throw new Error('此账号的本机记录无法读取');
+  next.userId=uid;
+  const nextState=GrowthEvents.norm(next.state);
+  localStorage.setItem(key(growthStore.userId),JSON.stringify({...growthStore,state:s}));
+  localStorage.setItem(STORE_KEY,JSON.stringify(next));
+  growthStore=next;s=nextState;picks=[];parentOpen=false;starRollFrom=null;page='today';
+  localStorage.removeItem(key(uid));
+  render();
+}
+window.addEventListener('storage',event=>{
+  if(event.key!==STORE_KEY || !event.newValue)return;
+  const active=JSON.parse(event.newValue);
+  if(active.userId!==growthStore.userId)location.reload();
+});
+window.GrowthStore={activateAccount,read:()=>growthStore,eventOf,merge:mergeGrowth,persist:persistStore,dropPending:(ids)=>{const set=new Set(ids||[]);growthStore.pending=growthStore.pending.filter(e=>!set.has(String(e.id)));persistStore()},setAccount:(profileId,userId)=>{growthStore.profileId=profileId;growthStore.userId=userId;persistStore()}};
 persistStore();
 function today(){return s.days[dayKey()]??=( {selected:[],done:{},plan:['吃点心','玩20分钟','学习时间','自由时间','整理书包'],planned:false,mood:null,note:'',customDone:{}})}function toast(t){$('notice').innerHTML='<div class="toast">'+esc(t)+'</div>';clearTimeout(toastTimer);toastTimer=setTimeout(()=>$('notice').innerHTML='',2600)}function art(k){return '<span aria-hidden="true" class="art '+k+'"></span>'}function show(html){couponToUse=null;$('modal').innerHTML='<button class="close" aria-label="关闭" onclick="closeModal()">×</button>'+html;if(!$('modal').open)$('modal').showModal()}function closeModal(){couponToUse=null;$('modal').close()}function go(p){page=p;render();window.scrollTo(0,0);const m=$('main');m.classList.remove('page-in');void m.offsetWidth;m.classList.add('page-in')}
 const mascot = (cls='mascot') => `<img class="${cls}" src="star-friend.webp" alt="" decoding="async">`;
@@ -110,7 +135,7 @@ function proposeWish(){const title=($('wishTitle').value||'').trim(),desc=wishKi
 function recent(){return Array.from({length:7},(_,i)=>{let d=new Date();d.setDate(d.getDate()-6+i);let key=d.getFullYear()+'-'+String(d.getMonth()+1).padStart(2,'0')+'-'+String(d.getDate()).padStart(2,'0');return [key,s.days[key]]})}function weekly(){let rows=recent(),a=0,b=0;rows.forEach(([,d])=>Object.values(d?.done||{}).forEach(t=>t==='self'?a++:b++));show('<h2>这一周的小发现</h2><p class="sub">最近 7 天 · 只统计已记录的挑战</p><div class="grid"><div class="tile"><div class="metric">'+a+'</div><div class="sub">自主完成</div></div><div class="tile"><div class="metric">'+b+'</div><div class="sub">提醒后完成</div></div></div><div class="guide"><table><tr><th>日期</th><th>自己想起 / 提醒后</th></tr>'+rows.map(([k,d])=>'<tr><td>'+k.slice(5)+'</td><td>'+(d&&Object.keys(d.done).length?Object.values(d.done).filter(x=>x==='self').length+' / '+Object.values(d.done).filter(x=>x==='help').length:'未记录')+'</td></tr>').join('')+'</table></div><p>哪件事越来越熟练了？<br>明天想让哪件事更容易一点？</p><p class="sub">“提醒后完成”是任务次数，不是催促次数。未记录的日子不算失败。</p>')}
 $('parent').onclick=()=>{parentOpen=false;parents()};
 function parents(){
-  const cloudState=growthStore.userId?'已开启云端同步':'不登录也能用';
+  const cloudState=growthStore.userId?'本机记录已绑定家长账号':'不登录也能用';
   const wishCount=pendingWishes().length;
   show('<div class="parent-center"><div class="parent-center-head"><p class="eyebrow">给家长</p><h2>家长中心</h2><p class="sub">先把最重要的三件事说清楚，再按需要调整成长规则。</p></div>'+
     '<section class="parent-hero"><div class="parent-hero-icon" aria-hidden="true">✓</div><div><strong>'+cloudState+'</strong><h3>孩子现在就可以开始使用</h3><p>未登录时，成长记录会保存在当前设备。为了长期保留记录、换设备也能恢复，建议家长登录并开启云端同步。</p><span class="parent-note">孩子不用登录 · 断网也能继续使用</span></div></section>'+
@@ -128,13 +153,18 @@ function parents(){
     '<div class="parent-links"><button class="parent-link-card" onclick="openParentSection(\'data\')"><span>🗂️</span><span><strong>记录与数据</strong><small>导出、恢复与账号退出</small></span><b aria-hidden="true">›</b></button><button class="parent-link-card" onclick="guide()"><span>📖</span><span><strong>使用说明</strong><small>每天怎么用、家长怎么陪</small></span><b aria-hidden="true">›</b></button></div></div>');
   if(window.Cloud&&Cloud.mount)Cloud.mount('cloudBox');
 }
-function parentSectionLabel(section){return ({child:'孩子与成长',wishes:'小心愿',rewards:'奖励规则',skills:'技能管理',prefs:'使用偏好',data:'记录与数据'})[section]||'家长设置'}
+function parentSectionLabel(section){return ({child:'孩子与成长',wishes:'小心愿',rewards:'奖励规则',skills:'技能管理',prefs:'使用偏好',data:'记录与数据',switchAccount:'切换账号',logout:'退出家长账号'})[section]||'家长设置'}
 function parentGate(section){
   show('<button class="parent-back" onclick="parents()">← 返回家长中心</button><div class="parent-gate"><div class="parent-gate-icon" aria-hidden="true">👨‍👩‍👧</div><h2>请家长确认</h2><p class="sub">即将进入「'+parentSectionLabel(section)+'」。输入 1234 只是为了防止孩子误触，不是安全密码。</p><label>家长确认<input id="gate" inputmode="numeric" type="password" maxlength="4" autocomplete="off" placeholder="请输入 1234"></label><button class="primary" onclick="unlockParentSection(\''+section+'\')">进入设置</button></div>');
 }
 function unlockParentSection(section){if($('gate').value==='1234'){parentOpen=true;openParentSection(section)}else toast('请让家长输入 1234')}
 function openParentSection(section){
   if(!parentOpen)return parentGate(section);
+  if(section==='switchAccount'||section==='logout'){
+    const switching=section==='switchAccount';
+    parentSectionShell(parentSectionLabel(section),'当前孩子的记录会留在本机。登录其他手机号后，将显示对应孩子的记录。','<button class="primary" onclick="Cloud.logout('+switching+')">'+(switching?'退出并登录其他账号':'确认退出')+'</button>');
+    return;
+  }
   if(section==='child')return parentChild();
   if(section==='wishes')return parentWishes();
   if(section==='rewards')return parentRewards();
@@ -175,7 +205,7 @@ function parentPrefs(){
 }
 function parentData(){
   let restore=growthStore.userId?'':'<button class="secondary" onclick="$(\'restoreFile\').click()">从文件恢复</button><input id="restoreFile" type="file" accept=".json,application/json" style="display:none" onchange="restoreData(this)">';
-  let account=growthStore.userId?'<div class="parent-data-status"><strong>☁️ 当前记录已绑定家长账号</strong><p class="sub">换设备登录同一手机号即可恢复。退出账号后，本机记录仍会保留。</p></div><button class="link danger-link" onclick="if(window.Cloud){Cloud.logout();closeModal()}">退出家长账号</button>':'<div class="parent-data-status"><strong>📱 当前仅保存在这台设备</strong><p class="sub">建议先回家长中心开启云端同步；也可以导出记录文件自行保存。</p></div>';
+  let account=growthStore.userId?'<div class="parent-data-status"><strong>☁️ 当前记录已绑定家长账号</strong><p class="sub">换设备登录同一手机号即可恢复。退出账号后，本机记录仍会保留。</p></div>'+(window.Cloud?.signedIn()?'<button class="link danger-link" onclick="openParentSection(\'logout\')">退出家长账号</button>':''):'<div class="parent-data-status"><strong>📱 当前仅保存在这台设备</strong><p class="sub">建议先回家长中心开启云端同步；也可以导出记录文件自行保存。</p></div>';
   parentSectionShell('🗂️ 记录与数据','这里放低频的数据维护操作。',account+'<div class="parent-data-actions"><button class="secondary" onclick="backupData()">导出记录文件</button>'+restore+'</div><p class="sub">文件恢复只在未绑定云端账号时提供，避免覆盖云端事件账本。</p>');
 }
 function saveParent(){if(!parentOpen)return;let name=$('kidName').value.trim(),goal=Number($('goal').value),note=$('note').value.trim(),events=[];if(!name)return toast('先填写孩子的小名');if(name!==s.name){s.name=name;events.push({type:'settings.name',value:name})}if(goal!==s.goal){s.goal=goal;events.push({type:'settings.goal',value:goal})}if(note!==today().note){today().note=note;events.push({type:'note',day:dayKey(),text:note})}save(events);render();parentChild();toast('孩子设置已保存')}

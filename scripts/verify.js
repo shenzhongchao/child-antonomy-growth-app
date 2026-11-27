@@ -11,9 +11,9 @@ const DIST = path.join(ROOT, 'dist');
 
 // 核心静态资源 ?v= 版本：HTTP/CDN/浏览器缓存 busting。只能向前递增，绝不复用历史版本号
 // （v=13 曾发布过，回退会让旧缓存命中旧文件，新旧核心脚本混装）。当前指定版本。
-const APP_ASSET_V = 27;
+const APP_ASSET_V = 28;
 // Service Worker Cache Storage 命名空间（growth-vXX），与 ?v=xx 职责不同、不必相等，同样只递增。
-const SW_CACHE_V = 'growth-v26';
+const SW_CACHE_V = 'growth-v27';
 const SRC = fs.readFileSync(path.join(DIST, 'app.js'), 'utf8');
 const EVENTS = require(path.join(DIST, 'growth-events.js'));
 const RealDate = Date;
@@ -199,7 +199,7 @@ restoreData({ files: [{ content: 'not json{{' }], value: 'x' });
 assert(s.stars === 42 && document.getElementById('notice').innerHTML.includes('无法识别'), '非法 JSON 被拒绝且不动数据');
 restoreData({ files: [{ content: JSON.stringify({ stars: 'abc' }) }], value: 'x' });
 assert(s.stars === 42, '结构不符的备份被拒绝');
-growthStore.userId = 'u_bound'; parentData();
+growthStore.userId = 'u_bound'; window.Cloud={signedIn:()=>true}; parentData();
 assert(!document.getElementById('modal').innerHTML.includes('restoreFile') && document.getElementById('modal').innerHTML.includes('退出家长账号'), '绑定账号后隐藏文件恢复并提供受 PIN 保护的退出入口');
 restoreData({ files: [{ content: JSON.stringify({ version: 2, state: blank() }) }], value: 'x' });
 assert(s.stars === 42, '绑定账号后文件恢复不生效');
@@ -746,6 +746,29 @@ async function cloudSyncTests() {
   assert(resD2 === 'ok', '场景 D 恢复后重传成功');
   const colD = fakeD.events[0] && fakeD.events[0].payload;
   assert(fakeD.events.length === 1 && ((colD.payload || colD).stars === 42), '重传后云端账本收到备份基线');
+
+  vm.runInThisContext("save({type:'settings.name',value:'原账号离线记录'})");
+  const pendingId = globalThis.__appPack().pending[0].id;
+  const fakeOther = makeFakeCloud({ profileId: 'p_other', events: [] });
+  const other = Cloud.__test(fakeOther.app, 'u_other');
+  assert(await other.syncNow(true) === 'ok' && !fakeOther.events.length &&
+    globalThis.__appState().stars === 0, '换账号后使用独立账本，原账号待传事件不会上传给新账号');
+  const original = Cloud.__test(fakeD.app, 'u_test');
+  assert(await original.syncNow(true) === 'ok' && globalThis.__appState().stars === 42 &&
+    fakeD.log.uploadedIds.includes(pendingId), '切回原账号后恢复余额并补传之前的离线记录');
+
+  vm.runInThisContext('Cloud.mount("accountBox")');
+  const controls = document.getElementById('accountBox').innerHTML;
+  assert(controls.includes('切换账号') && controls.includes('退出家长账号'), '登录后家长中心直接显示两个账号入口');
+  const broken = makeFakeCloud();
+  broken.app.auth = () => ({signOut: () => Promise.reject(new Error('模拟退出失败'))});
+  Cloud.__test(broken.app, 'u_test');
+  await Cloud.logout(true);
+  assert(Cloud.signedIn(), '退出失败时保留登录态并允许重试');
+  Cloud.__test(fakeD.app, 'u_test');
+  await Cloud.logout(true);
+  assert(!Cloud.signedIn() && document.getElementById('cloudBox').innerHTML.includes('id="clPhone"'),
+    '确认切换后回到家长中心并直接打开手机号登录表单');
 
   // 场景 E：验证码 UX——发送成功后面板内有可见反馈 + 60 秒重发倒计时，按钮禁用等倒计时
   globalThis.__fakeE = makeFakeCloud({ events: [] });
